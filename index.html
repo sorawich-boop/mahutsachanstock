@@ -403,6 +403,7 @@ tr.row-yellow { background: #fffef5; }
     <button class="tab active" onclick="switchTab('bar',this)">🧉 บาร์น้ำ</button>
     <button class="tab" onclick="switchTab('container',this)">🥤 ภาชนะ</button>
     <button class="tab" onclick="switchTab('daily',this)">📊 รายวัน</button>
+    <button class="tab" onclick="switchTab('physcount',this)">🔢 นับจริง</button>
     <button class="tab" onclick="switchTab('history',this)">📋 ประวัติ</button>
   </div>
 
@@ -471,6 +472,17 @@ tr.row-yellow { background: #fffef5; }
       <!-- Footer -->
       <div style="background:#f6f4f1;padding:10px 22px;font-size:11px;color:var(--muted);text-align:right" id="dailyCardFooter"></div>
     </div>
+  </div>
+
+  <!-- TAB: physcount -->
+  <div id="pane-physcount" style="display:none">
+    <div class="toolbar" style="align-items:center">
+      <button class="btn btn-secondary" onclick="physCountNav(-1)">◀</button>
+      <span id="physCountNavLabel" style="font-size:13px;color:var(--muted);padding:0 8px">—</span>
+      <button class="btn btn-secondary" onclick="physCountNav(1)">▶</button>
+      <button class="btn btn-primary ml-auto" onclick="savePhysCountImage()">📥 เซฟรูป</button>
+    </div>
+    <div id="physCountCardWrap" style="max-width:680px;margin:0 auto;background:white;border:1px solid var(--border);border-radius:14px;overflow:hidden"></div>
   </div>
 
   <!-- TAB: history -->
@@ -973,14 +985,15 @@ function renderHistory() {
 // ════════════════════════════════════════════════════════
 
 function switchTab(tab, btn) {
-  ['bar','container','daily','history'].forEach(t => {
+  ['bar','container','daily','physcount','history'].forEach(t => {
     document.getElementById('pane-'+t).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   activeTab = tab;
-  document.getElementById('fab').style.display = (tab === 'history' || tab === 'daily') ? 'none' : 'flex';
-  if (tab === 'daily') { dailyGoToday(); }
+  document.getElementById('fab').style.display = (tab === 'history' || tab === 'daily' || tab === 'physcount') ? 'none' : 'flex';
+  if (tab === 'daily')     { dailyGoToday(); }
+  if (tab === 'physcount') { renderPhysCountPane(); }
 }
 
 function onFilter(type, f, btn) {
@@ -1466,10 +1479,15 @@ async function submitPhysCount() {
   // Update local stock to actual counts (baseline reset)
   items.forEach(item => { item.stock = actual[item.name]; });
 
-  // Log to history
-  const entries = items
-    .filter(i => diffs[i.name] !== 0)
-    .map(i => ({ name: i.name, recv: 0, used: 0, actual: actual[i.name], diff: diffs[i.name] }));
+  // Log to history — store ALL items with system stock for card display
+  const entries = items.map(i => ({
+    name: i.name, recv: 0, used: 0,
+    system: i.stock,   // stock BEFORE the count (already updated above, so use actual-diff)
+    actual: actual[i.name],
+    diff:   diffs[i.name]
+  }));
+  // Fix: system stock = actual - diff (stock was updated before we captured it)
+  entries.forEach(e => { e.system = e.actual - e.diff; });
   state.history.push({ date, type: countType, kind: 'physicalCount', label, by: name, entries, ts: Date.now() });
   save();
   closeModal('countModal');
@@ -1478,6 +1496,9 @@ async function submitPhysCount() {
   const discText = badItems.length > 0
     ? ` พบความต่าง ${badItems.length} รายการ`
     : ' ✅ ตรงทุกรายการ';
+
+  // Download count card
+  downloadCountCard({ date, label, by: name, type: countType, items, actual, diffs });
 
   // Push to Sheets
   if (state.apiUrl && !state.demoMode) {
@@ -1499,6 +1520,40 @@ async function submitPhysCount() {
     }
   } else {
     toast(`🔢 บันทึกนับจริงแล้ว${discText}`);
+  }
+}
+
+// ════════════════════════════════════════════════════════
+// PHYSICAL COUNT CARD  (screenshot & download)
+// ════════════════════════════════════════════════════════
+
+async function downloadCountCard({ date, label, by, type, entries }) {
+  // Build a temp offscreen card using shared buildCountCardHTML
+  const session = { date, label, by, type, entries };
+  const card = document.createElement('div');
+  card.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:680px;background:white;font-family:-apple-system,Segoe UI,sans-serif;overflow:hidden';
+  card.innerHTML = buildCountCardHTML(session);
+  document.body.appendChild(card);
+  toast('📸 กำลังสร้างรูปนับจริง...');
+  try {
+    if (!window.html2canvas) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    const canvas = await html2canvas(card, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+    const link = document.createElement('a');
+    link.download = `count_${date}_${type}.jpg`;
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+    toast('✅ เซฟรูปนับจริงแล้ว ส่ง LINE ได้เลย 🚀');
+  } catch(err) {
+    toast('❌ สร้างรูปไม่สำเร็จ: ' + err.message);
+  } finally {
+    document.body.removeChild(card);
   }
 }
 
@@ -1727,7 +1782,11 @@ async function saveDailyImage() {
 }
 
 async function deleteHistory(idx) {
-  if (!confirm('ลบรายการนี้? (จะคืนค่าสต๊อก)')) return;
+  const _entry = state.history[idx];
+  const msg = _entry?.kind === 'physicalCount'
+    ? 'ลบรายการนับจริงนี้?\n(สต๊อกใน Sheets จะไม่เปลี่ยนแปลง)'
+    : 'ลบรายการนี้?\n(สต๊อกจะถูกคืนค่าใน Sheets)';
+  if (!confirm(msg)) return;
   const entry = state.history[idx];
   if (!entry) { toast('⚠️ ไม่พบรายการ'); return; }
 
@@ -1904,6 +1963,131 @@ document.querySelectorAll('.modal-bg').forEach(bg => {
 // ════════════════════════════════════════════════════════
 // TOAST
 // ════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════
+// PHYSCOUNT PANE
+// ════════════════════════════════════════════════════════
+
+let physCountIdx = 0;
+
+function getPhysCountSessions() {
+  return (state.history || [])
+    .filter(e => e.kind === 'physicalCount')
+    .slice().reverse(); // newest first
+}
+
+function physCountNav(delta) {
+  const sessions = getPhysCountSessions();
+  if (!sessions.length) return;
+  physCountIdx = Math.max(0, Math.min(sessions.length - 1, physCountIdx + delta));
+  renderPhysCountPane();
+}
+
+function renderPhysCountPane() {
+  const sessions = getPhysCountSessions();
+  const wrap  = document.getElementById('physCountCardWrap');
+  const label = document.getElementById('physCountNavLabel');
+
+  if (!sessions.length) {
+    wrap.innerHTML  = '<div style="padding:40px;text-align:center;color:var(--muted)">ยังไม่มีการนับจริง<br><small>กด 🔢 นับจริง เพื่อเริ่มนับ</small></div>';
+    label.textContent = '—';
+    return;
+  }
+
+  if (physCountIdx >= sessions.length) physCountIdx = 0;
+  const session = sessions[physCountIdx];
+  label.textContent = `${physCountIdx + 1} / ${sessions.length}`;
+  wrap.innerHTML = buildCountCardHTML(session);
+}
+
+function buildCountCardHTML(session) {
+  const logoSrc   = document.querySelector('.pin-logo')?.src || '';
+  const typeLabel = session.type === 'bar' ? '🧉 บาร์น้ำ' : '🥤 ภาชนะ';
+  const thaiDate  = formatDateTH(session.date);
+  const hasDiff   = (session.entries || []).some(e => e.diff !== 0);
+  const discCount = (session.entries || []).filter(e => e.diff !== 0).length;
+  const statusColor = discCount ? '#cc3333' : '#3a8c5c';
+  const statusText  = discCount ? `พบความต่าง ${discCount} รายการ` : '✅ ตรงทุกรายการ';
+  const hasSystem   = (session.entries || []).some(e => e.system !== undefined);
+
+  const rows = (session.entries || []).map((e, idx) => {
+    const diff    = e.diff || 0;
+    const rowBg   = diff < 0 ? '#fff5f5' : diff > 0 ? '#fffdf0' : 'white';
+    const diffCol = diff < 0 ? '#cc3333' : diff > 0 ? '#d18e1a' : '#3a8c5c';
+    const diffTxt = diff === 0 ? '✓' : (diff > 0 ? '+' : '') + diff;
+    const sysTd   = hasSystem
+      ? `<td style="padding:6px 10px;font-size:13px;text-align:right">${e.system ?? '—'}</td>`
+      : '';
+    return `<tr style="background:${rowBg};border-top:1px solid #f0ece6">
+      <td style="padding:6px 8px;font-size:11px;color:#999;text-align:right">${idx+1}</td>
+      <td style="padding:6px 10px;font-size:13px;font-weight:500">${e.name}</td>
+      ${sysTd}
+      <td style="padding:6px 10px;font-size:13px;font-weight:700;text-align:right">${e.actual ?? '—'}</td>
+      <td style="padding:6px 10px;font-size:13px;font-weight:700;text-align:right;color:${diffCol}">${diffTxt}</td>
+    </tr>`;
+  }).join('');
+
+  const sysHeader = hasSystem
+    ? `<th style="padding:8px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:#999;text-align:right">ระบบ</th>`
+    : '';
+
+  return `
+    <div style="background:#1c1916;color:white;padding:18px 22px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.6;margin-bottom:4px">Mahutsachan Cafe · Khlong Thom</div>
+        <div style="font-size:18px;font-weight:700">สรุปนับสต๊อคจริง</div>
+        <div style="font-size:13px;opacity:.75;margin-top:3px">${thaiDate} · ${typeLabel}</div>
+        ${session.label ? `<div style="font-size:12px;opacity:.6;margin-top:2px">${session.label}</div>` : ''}
+      </div>
+      ${logoSrc ? `<img src="${logoSrc}" style="width:60px;height:60px;object-fit:contain;border-radius:10px;opacity:.9" />` : ''}
+    </div>
+    <div style="background:${statusColor};color:white;padding:8px 22px;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+      <span>${statusText}</span>
+      <span style="opacity:.8;font-weight:400">👤 ${session.by || '—'}</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#f5f3f0">
+        <th style="padding:8px;font-size:10px;font-weight:700;text-transform:uppercase;color:#999;text-align:right;width:32px">#</th>
+        <th style="padding:8px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:#999;text-align:left">สินค้า</th>
+        ${sysHeader}
+        <th style="padding:8px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:#999;text-align:right">นับจริง</th>
+        <th style="padding:8px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:#999;text-align:right">ส่วนต่าง</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="background:#f6f4f1;padding:10px 22px;font-size:11px;color:#999;text-align:right">
+      ${formatDateTH(session.date)} · Mahutsachan Stock
+    </div>`;
+}
+
+async function savePhysCountImage() {
+  const sessions = getPhysCountSessions();
+  if (!sessions.length) { toast('ไม่มีข้อมูลนับจริง'); return; }
+  const session = sessions[physCountIdx];
+  const wrap = document.getElementById('physCountCardWrap');
+  const btn  = document.querySelector('#pane-physcount .btn-primary');
+  btn.disabled = true; btn.textContent = '⏳ กำลังสร้าง...';
+  try {
+    if (!window.html2canvas) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+    const canvas = await html2canvas(wrap, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+    const link = document.createElement('a');
+    link.download = `count_${session.date}_${session.type}.jpg`;
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+    toast('✅ เซฟรูปนับจริงแล้ว ส่ง LINE ได้เลย 🚀');
+  } catch(err) {
+    toast('❌ เกิดข้อผิดพลาด: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '📥 เซฟรูป';
+  }
+}
 
 // Format a date string (yyyy-MM-dd or any parseable) to Thai locale, Bangkok time
 function formatDateTH(dateStr) {
