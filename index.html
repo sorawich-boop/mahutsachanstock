@@ -117,8 +117,8 @@ main { max-width: 960px; margin: 0 auto; padding: 16px 16px 80px; }
 .ml-auto { margin-left: auto; }
 
 /* ── STOCK TABLE ── */
-.table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-table { width: 100%; border-collapse: collapse; }
+.table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; min-width: 480px; }
 thead th { background: #f2efe9; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 10px 14px; text-align: left; }
 tbody tr { border-top: 1px solid var(--border); transition: background .1s; }
 tbody tr:hover, tbody tr:active { background: #faf7f4; }
