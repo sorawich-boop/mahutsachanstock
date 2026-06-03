@@ -364,9 +364,6 @@ tr.row-yellow { background: #fffef5; }
   <button class="sync-btn" onclick="syncData()" title="Sync ข้อมูลจาก Sheets">
     <span class="sync-icon" id="syncIcon">🔄</span>
   </button>
-  <button class="sync-btn" onclick="forceResetFromServer()" title="รีเซ็ตและดึงข้อมูลใหม่จาก Sheets ทั้งหมด" style="color:var(--red);border-color:#f5c6c4">
-    ↺ รีเซ็ต
-  </button>
   <button class="settings-btn" id="settingsBtn" onclick="openConfig()" title="Settings">⚙️</button>
 </header>
 
@@ -899,7 +896,7 @@ function renderAlerts() {
   if (!low.length) { bar.classList.remove('show'); return; }
   bar.classList.add('show');
   chips.innerHTML = low.map(i =>
-    `<span class="alert-chip">${i.name} <b>${i.stock}${i.unit}</b></span>`
+    `<span class="alert-chip">${i.name}</span>`
   ).join('');
 }
 
