@@ -600,8 +600,47 @@ tr.row-yellow { background: #fffef5; }
             style="margin-bottom:0;width:100%;max-width:100%" autocomplete="name" />
         </div>
       </div>
-      <label class="form-label">ชื่อรอบการนับ (เช่น นับสต๊อค 1)</label>
-      <input type="text" class="count-label-input" id="countLabel" placeholder="นับสต๊อค 1 / นับสต๊อค 2" />
+      <label class="form-label">ชื่อรอบการนับ</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">ครั้งที่</div>
+          <select id="countRound" class="count-label-input" style="margin-bottom:0;cursor:pointer" onchange="updateCountLabel()">
+            <option value="1">ครั้งที่ 1</option>
+            <option value="2">ครั้งที่ 2</option>
+            <option value="3">ครั้งที่ 3</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">เดือน</div>
+          <select id="countMonth" class="count-label-input" style="margin-bottom:0;cursor:pointer" onchange="updateCountLabel()">
+            <option value="มกราคม">มกราคม</option>
+            <option value="กุมภาพันธ์">กุมภาพันธ์</option>
+            <option value="มีนาคม">มีนาคม</option>
+            <option value="เมษายน">เมษายน</option>
+            <option value="พฤษภาคม">พฤษภาคม</option>
+            <option value="มิถุนายน">มิถุนายน</option>
+            <option value="กรกฎาคม">กรกฎาคม</option>
+            <option value="สิงหาคม">สิงหาคม</option>
+            <option value="กันยายน">กันยายน</option>
+            <option value="ตุลาคม">ตุลาคม</option>
+            <option value="พฤศจิกายน">พฤศจิกายน</option>
+            <option value="ธันวาคม">ธันวาคม</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">ปี (พ.ศ.)</div>
+          <select id="countYear" class="count-label-input" style="margin-bottom:0;cursor:pointer" onchange="updateCountLabel()">
+            <option value="2568">2568</option>
+            <option value="2569" selected>2569</option>
+            <option value="2570">2570</option>
+            <option value="2571">2571</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+        ตัวอย่าง: <span id="countLabelPreview" style="color:var(--accent);font-weight:600"></span>
+      </div>
+      <input type="hidden" id="countLabel" />
       <div class="count-summary" id="countSummary">
         <div class="cs-item"><b id="cs-match">—</b>รายการตรง</div>
         <div class="cs-item"><b id="cs-short" style="color:var(--red)">—</b>ขาด</div>
@@ -1372,7 +1411,24 @@ function openPhysCount(type) {
   countType = type;
   document.getElementById('countTitle').textContent = type === 'bar' ? '🔢 นับสต๊อคจริง — บาร์น้ำ' : '🔢 นับสต๊อคจริง — ภาชนะ';
   document.getElementById('countDate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('countLabel').value = '';
+  // Auto-set current month and Buddhist year
+  const _now = new Date();
+  const _thaiMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  const _buddhistYear = String(_now.getFullYear() + 543);
+  const _monthEl = document.getElementById('countMonth');
+  const _yearEl  = document.getElementById('countYear');
+  if (_monthEl) _monthEl.value = _thaiMonths[_now.getMonth()];
+  if (_yearEl) {
+    // Add year option if not in list
+    if (![..._yearEl.options].some(o => o.value === _buddhistYear)) {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = _buddhistYear;
+      _yearEl.appendChild(opt);
+    }
+    _yearEl.value = _buddhistYear;
+  }
+  document.getElementById('countRound').value = '1';
+  updateCountLabel();
   document.getElementById('countName').value = localStorage.getItem('mahut_last_name') || '';
   buildCountForm(type);
   openModal('countModal');
@@ -2176,6 +2232,17 @@ function pinKey(d) {
 function pinDel() {
   pinEntry = pinEntry.slice(0, -1);
   updatePinDots();
+}
+
+function updateCountLabel() {
+  const round = document.getElementById('countRound')?.value || '1';
+  const month = document.getElementById('countMonth')?.value || '';
+  const year  = document.getElementById('countYear')?.value  || '2569';
+  const label = `นับครั้งที่ ${round} / ${month} ${year}`;
+  const hidden = document.getElementById('countLabel');
+  if (hidden) hidden.value = label;
+  const preview = document.getElementById('countLabelPreview');
+  if (preview) preview.textContent = label;
 }
 
 function updatePinDots() {
