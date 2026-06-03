@@ -160,6 +160,13 @@ function handleRequest(method, params, body) {
         return setStock(ssFor(type), itemName, parseFloat(newStock), by || 'Manual edit');
       }
 
+      case 'deleteLogEntry': {
+        // Delete all Log rows matching a given timestamp (removes a count/entry session)
+        const { type, ts } = body;
+        if (!type || !ts) return err('Missing type or ts');
+        return deleteLogEntry(ssFor(type), String(ts));
+      }
+
       case 'deleteFolders': {
         // Delete item-level Drive folders for a specific date entry
         const { type, date, itemNames } = body;
@@ -455,6 +462,32 @@ function setStock(ssId, itemName, newStock, by) {
   const ts    = new Date().toISOString();
   sheet.appendRow([date, by, itemName, '', '', newStock, 'adjust', '', ts]);
   return { success: true, stock: newStock };
+}
+
+// ============================================================
+// DELETE LOG ENTRY  (removes all rows matching a timestamp from the Log tab)
+// ============================================================
+
+function deleteLogEntry(ssId, ts) {
+  var sheet = getLogSheet(ssId);
+  if (sheet.getLastRow() < 2) return { success: true, deleted: 0 };
+
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
+
+  // Collect row numbers that match the ts (column index 8), in reverse order
+  var rowsToDelete = [];
+  data.forEach(function(r, i) {
+    if (String(r[8]).trim() === ts) {
+      rowsToDelete.push(i + 2); // +2: 1-indexed + header row
+    }
+  });
+
+  // Delete from bottom to top so row indices stay valid
+  rowsToDelete.reverse().forEach(function(rowNum) {
+    sheet.deleteRow(rowNum);
+  });
+
+  return { success: true, deleted: rowsToDelete.length };
 }
 
 // ============================================================
