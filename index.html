@@ -663,7 +663,7 @@ function emptyDataState() {
 }
 
 // ── Hardcoded API URL — no need to re-enter ──────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyR_RFmhOhvHq24dHZ-eidurOcuPnZFV98Kvp7df0Kl_dnq3o7bkbdjDslcVkStA3Ws/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyxCleQHdrmUXo15kI-HxXPXDp0oh_uB-lLHZMsYZLqD3vi1nAyYUKwgLpg2LdRFIs0/exec';
 
 const cfg = loadConfig();
 let state = { ...emptyDataState(), apiUrl: APPS_SCRIPT_URL, demoMode: false };
@@ -1310,7 +1310,7 @@ async function submitEntry() {
       const res = await fetch(state.apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'addEntry', type: entryType, date, recv, used })
+        body: JSON.stringify({ action: 'addEntry', type: entryType, date, by: name, recv, used })
       });
       const data = await res.json();
       const photoCount = Object.values(photoUrls).flat().length;
@@ -1494,9 +1494,6 @@ async function submitPhysCount() {
     ? ` พบความต่าง ${badItems.length} รายการ`
     : ' ✅ ตรงทุกรายการ';
 
-  // Download count card
-  downloadCountCard({ date, label, by: name, type: countType, items, actual, diffs });
-
   // Push to Sheets
   if (state.apiUrl && !state.demoMode) {
     document.getElementById('countSubmitBtn').disabled = true;
@@ -1504,7 +1501,7 @@ async function submitPhysCount() {
       const res = await fetch(state.apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'physicalCount', type: countType, date, actual, label })
+        body: JSON.stringify({ action: 'physicalCount', type: countType, date, by: name, actual, label })
       });
       const data = await res.json();
       toast(data.success

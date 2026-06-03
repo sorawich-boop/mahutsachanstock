@@ -338,7 +338,7 @@ function addPhysicalCount(ssId, date, by, actual, label) {
 
     rows.push([
       date, by, item.name,
-      '', '',            // recv / used blank for counts
+      sys,  '',          // recv = system stock at time of count (for diff reconstruction)
       actVal,            // remaining = actual count
       'count',
       label || '',       // reuse photos col for label
@@ -539,14 +539,13 @@ function getRecentLog(ssId, limit) {
   const sheet = getLogSheet(ssId);
   if (sheet.getLastRow() < 2) return [];
 
-  // Read the last (limit * 15) rows — each entry spans multiple item rows
+  // Read ALL rows so we can accurately track running stock for count diffs
   const totalDataRows = sheet.getLastRow() - 1;
-  const readCount     = Math.min(totalDataRows, limit * 15);
-  const startRow      = sheet.getLastRow() - readCount + 1;
-  const data          = sheet.getRange(startRow, 1, readCount, 9).getValues();
+  const data = sheet.getRange(2, 1, totalDataRows, 9).getValues();
 
-  const groups = {}; // key → entry object
-  const keys   = []; // ordered keys
+  const groups    = {}; // key → entry object
+  const keys      = []; // ordered keys (chronological)
+  const lastStock = {}; // tracks latest remaining per item as we iterate
 
   data.forEach(function(r) {
     const date   = r[0] instanceof Date
@@ -558,14 +557,20 @@ function getRecentLog(ssId, limit) {
     const used   = parseFloat(r[4]) || 0;
     const remain = parseFloat(r[5]) || 0;
     const kind   = String(r[6]).trim();
-    const col8   = String(r[7]).trim(); // photos URL (entry) OR count label (count)
+    const col8   = String(r[7]).trim();
     const ts     = String(r[8]).trim();
 
     if (!item) return;
-    if (kind === 'baseline' || kind === 'adjust') return; // skip internal rows
 
-    // Group key: timestamp preferred; fallback to date+by+kind
-    const key = ts || (date + '\xA7' + by + '\xA7' + kind);
+    // Capture system stock BEFORE this row updates the tracker
+    var prevStock = lastStock[item]; // undefined if first time seeing this item
+
+    // Update running stock tracker for all row types
+    lastStock[item] = remain;
+
+    if (kind === 'baseline' || kind === 'adjust') return; // skip from history display
+
+    var key = ts || (date + '\xA7' + by + '\xA7' + kind);
 
     if (!groups[key]) {
       groups[key] = {
@@ -580,7 +585,13 @@ function getRecentLog(ssId, limit) {
     }
 
     if (kind === 'count') {
-      groups[key].entries.push({ name: item, actual: remain, diff: 0 });
+      // System stock = value tracked just before this count row
+      // If recv col has a value, it was stored explicitly by addPhysicalCount (new format)
+      var storedSys = parseFloat(r[3]);
+      var sysStock  = !isNaN(storedSys) ? storedSys
+                    : (prevStock !== undefined ? prevStock : remain);
+      var diff = remain - sysStock;
+      groups[key].entries.push({ name: item, system: sysStock, actual: remain, diff: diff });
     } else {
       var photos = col8 ? col8.split(',').map(function(p){ return p.trim(); }).filter(Boolean) : [];
       groups[key].entries.push({ name: item, recv: recv, used: used, photos: photos });
