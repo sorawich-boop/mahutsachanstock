@@ -1009,8 +1009,9 @@ function renderHistory() {
     }
 
     return `<div class="history-row">
-      <div class="h-meta"><div class="h-date">${formatDateTH(entry.date)}</div><div class="h-type">${typeLabel}</div>${entry.by ? `<div style="font-size:11px;color:var(--accent);margin-top:2px">👤 ${entry.by}</div>` : ''}</div>
+      <div class="h-meta"><div class="h-date">${formatDateTH(entry.date)}</div><div class="h-type">${typeLabel}</div>${entry.by ? `<div style="font-size:11px;color:var(--accent);margin-top:2px">👤 ${entry.by}</div>` : ''}${entry.editedBy ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;background:var(--accent-light);padding:2px 6px;border-radius:4px">✏️ แก้ไขโดย ${entry.editedBy}</div>` : ''}</div>
       <div class="h-tags">${tags}</div>
+      <button class="h-del" style="font-size:15px" onclick="openEditHistory(${realIdx})" title="แก้ไข">✏️</button>
       <button class="h-del" onclick="deleteHistory(${realIdx})">🗑</button>
     </div>`;
   }).join('');
@@ -1050,7 +1051,7 @@ function onFab() { openEntry(activeTab === 'history' ? 'bar' : activeTab); }
 // ENTRY MODAL
 // ════════════════════════════════════════════════════════
 
-function openEntry(type) {
+function openEntry(type, prefill) {
   entryType = type;
   photoMap = {};  // reset photo attachments
   document.getElementById('entryTitle').textContent = type === 'bar' ? '📝 บันทึกบาร์น้ำ' : '📝 บันทึกภาชนะ';
@@ -1109,6 +1110,18 @@ function openEntry(type) {
   });
 
   document.getElementById('entryForm').innerHTML = html;
+
+  // Pre-fill values if editing an existing entry
+  if (prefill) {
+    prefill.forEach(e => {
+      const key = esc(e.name);
+      const rEl = document.getElementById('r_' + key);
+      const uEl = document.getElementById('u_' + key);
+      if (rEl && e.recv > 0) { rEl.value = e.recv; onRecvChange(e.name, key, e.recv); }
+      if (uEl && e.used > 0)   uEl.value = e.used;
+    });
+  }
+
   openModal('entryModal');
 }
 
@@ -1434,8 +1447,11 @@ function openPhysCount(type) {
   openModal('countModal');
 }
 
-function buildCountForm(type) {
-  // Show in exact sheet column order with col numbers
+function buildCountForm(type, prefillEntries) {
+  // Build a lookup of pre-filled actual values if editing
+  const prefillMap = {};
+  if (prefillEntries) prefillEntries.forEach(e => { prefillMap[e.name] = e.actual; });
+
   const items = state[type];
   let html = '';
   items.forEach((item, idx) => {
@@ -1450,11 +1466,20 @@ function buildCountForm(type) {
       </div>
       <input class="count-input" type="number" id="ca_${esc(item.name)}"
         placeholder="${item.stock}" min="0" step="any"
+        value="${prefillMap[item.name] !== undefined ? prefillMap[item.name] : ''}"
         oninput="updateDiff('${esc(item.name)}', ${item.stock}, this.value)" />
       <div class="diff-cell diff-none" id="cd_${esc(item.name)}">—</div>
     </div>`;
   });
   document.getElementById('countForm').innerHTML = html;
+  // Trigger diff calculation for pre-filled values
+  if (prefillEntries) {
+    prefillEntries.forEach(e => {
+      if (prefillMap[e.name] !== undefined)
+        updateDiff(esc(e.name), e.system ?? e.actual, String(prefillMap[e.name]));
+    });
+    updateCountSummary();
+  }
   updateCountSummary();
 }
 
@@ -2027,7 +2052,18 @@ async function deleteItem(type, name) {
 }
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  // Clean up edit mode artifacts
+  document.getElementById(id)?.querySelectorAll('#editorNameField').forEach(el => el.remove());
+  if (editHistoryIdx >= 0) {
+    editHistoryIdx = -1;
+    const submitBtn = document.getElementById('submitBtn');
+    if (submitBtn) { submitBtn.textContent = 'บันทึก ✓'; submitBtn.onclick = submitEntry; }
+    const countBtn = document.getElementById('countSubmitBtn');
+    if (countBtn)  { countBtn.textContent = 'บันทึกนับจริง ✓'; countBtn.onclick = submitPhysCount; }
+  }
+}
 
 document.querySelectorAll('.modal-bg').forEach(bg => {
   bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
@@ -2232,6 +2268,218 @@ function pinKey(d) {
 function pinDel() {
   pinEntry = pinEntry.slice(0, -1);
   updatePinDots();
+}
+
+// ════════════════════════════════════════════════════════
+// EDIT HISTORY ENTRY
+// ════════════════════════════════════════════════════════
+
+let editHistoryIdx = -1;
+
+function openEditHistory(idx) {
+  const entry = state.history[idx];
+  if (!entry) return;
+
+  // Same-day check
+  const today = new Date().toISOString().split('T')[0];
+  if (entry.date !== today) {
+    toast('⚠️ แก้ไขได้เฉพาะรายการของวันนี้เท่านั้น');
+    return;
+  }
+
+  editHistoryIdx = idx;
+
+  if (entry.kind === 'physicalCount') {
+    countType = entry.type;
+    document.getElementById('countTitle').textContent =
+      entry.type === 'bar' ? '✏️ แก้ไขนับจริง — บาร์น้ำ' : '✏️ แก้ไขนับจริง — ภาชนะ';
+    document.getElementById('countDate').value = entry.date;
+    document.getElementById('countName').value = entry.by || '';
+    document.getElementById('countLabel').value = entry.label || '';
+    const previewEl = document.getElementById('countLabelPreview');
+    if (previewEl) previewEl.textContent = entry.label || '';
+
+    // Inject editor name field
+    injectEditorNameField('countModal');
+
+    buildCountForm(entry.type, entry.entries);
+    const btn = document.getElementById('countSubmitBtn');
+    btn.textContent = 'บันทึกการแก้ไข ✓';
+    btn.onclick = () => submitEditPhysCount();
+    openModal('countModal');
+
+  } else {
+    entryType = entry.type;
+    document.getElementById('entryTitle').textContent =
+      entry.type === 'bar' ? '✏️ แก้ไขบันทึกบาร์น้ำ' : '✏️ แก้ไขบันทึกภาชนะ';
+    document.getElementById('entryDate').value = entry.date;
+    document.getElementById('entryName').value = entry.by || '';
+
+    // Inject editor name field
+    injectEditorNameField('entryModal');
+
+    openEntry(entry.type, entry.entries);
+    const btn = document.getElementById('submitBtn');
+    btn.textContent = 'บันทึกการแก้ไข ✓';
+    btn.onclick = () => submitEditEntry();
+  }
+}
+
+function injectEditorNameField(modalId) {
+  // Add "ชื่อผู้แก้ไข" row if not already present
+  const modal = document.getElementById(modalId);
+  if (!modal || modal.querySelector('#editorNameField')) return;
+  const div = document.createElement('div');
+  div.id = 'editorNameField';
+  div.style.cssText = 'background:var(--accent-light);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px';
+  div.innerHTML = `
+    <div style="flex:1">
+      <label class="form-label" style="margin-bottom:4px">ชื่อผู้แก้ไข <span style="color:var(--red)">*</span></label>
+      <input type="text" id="editorName" class="date-field"
+        style="width:100%;max-width:100%;margin-bottom:0"
+        placeholder="ชื่อ-นามสกุล / ชื่อเล่น"
+        value="${localStorage.getItem('mahut_last_name') || ''}" autocomplete="name" />
+    </div>`;
+  const body = modal.querySelector('.modal-body');
+  if (body) body.insertBefore(div, body.firstChild);
+}
+
+async function submitEditEntry() {
+  const entry = state.history[editHistoryIdx];
+  if (!entry) return;
+
+  const date       = document.getElementById('entryDate').value;
+  const origBy     = document.getElementById('entryName').value.trim();
+  const editorName = document.getElementById('editorName')?.value.trim() || '';
+  if (!date)       { toast('⚠️ เลือกวันที่ก่อน'); return; }
+  if (!editorName) { document.getElementById('editorName')?.focus(); toast('⚠️ กรุณาใส่ชื่อผู้แก้ไข'); return; }
+  localStorage.setItem('mahut_last_name', editorName);
+
+  const items = state[entryType];
+  const newRecv = {}, newUsed = {};
+  items.forEach(item => {
+    const key = esc(item.name);
+    newRecv[item.name] = parseFloat(document.getElementById('r_'+key)?.value) || 0;
+    newUsed[item.name] = parseFloat(document.getElementById('u_'+key)?.value) || 0;
+  });
+
+  // Build old maps for stock delta calculation
+  const oldRecv = {}, oldUsed = {};
+  (entry.entries || []).forEach(e => {
+    oldRecv[e.name] = parseFloat(e.recv) || 0;
+    oldUsed[e.name] = parseFloat(e.used) || 0;
+  });
+
+  // New entries list
+  const newEntries = items
+    .filter(item => (newRecv[item.name] || 0) > 0 || (newUsed[item.name] || 0) > 0)
+    .map(item => ({ name: item.name, recv: newRecv[item.name] || 0, used: newUsed[item.name] || 0 }));
+
+  // Apply stock delta locally
+  const allNames = new Set([...Object.keys(newRecv), ...Object.keys(oldRecv)]);
+  allNames.forEach(n => {
+    const deltaRecv = (newRecv[n] || 0) - (oldRecv[n] || 0);
+    const deltaUsed = (newUsed[n] || 0) - (oldUsed[n] || 0);
+    const item = state[entryType].find(i => i.name === n);
+    if (item) item.stock = Math.max(0, item.stock + deltaRecv - deltaUsed);
+  });
+
+  // Update local history entry + log edit metadata
+  const editedAt = new Date().toISOString();
+  entry.entries   = newEntries;
+  entry.editedBy  = editorName;
+  entry.editedAt  = editedAt;
+  save();
+  closeModal('entryModal');
+  render();
+
+  // Push to Sheets: delete old rows + write fresh entry rows
+  if (state.apiUrl && !state.demoMode) {
+    toast('💾 กำลังอัปเดต Sheets...');
+    try {
+      // 1. Delete old entry rows
+      if (entry.ts) {
+        await fetch(state.apiUrl, {
+          method: 'POST', headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'deleteLogEntry', type: entryType, ts: String(entry.ts) })
+        });
+      }
+      // 2. Write corrected entry rows
+      const recv = {}, used = {};
+      newEntries.forEach(e => { recv[e.name] = e.recv; used[e.name] = e.used; });
+      const res  = await fetch(state.apiUrl, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'addEntry', type: entryType, date,
+          by: `${origBy} (แก้ไขโดย ${editorName})`, recv, used })
+      });
+      const data = await res.json();
+      toast(data.success ? `✅ แก้ไขและบันทึก Sheets แล้ว (แก้ไขโดย ${editorName})` : `⚠️ แก้ไขในเครื่องแล้ว: ${data.error}`);
+    } catch { toast('📱 แก้ไขในเครื่องแล้ว (Sheets offline)'); }
+  } else {
+    toast(`✅ แก้ไขแล้ว (แก้ไขโดย ${editorName})`);
+  }
+  editHistoryIdx = -1;
+}
+
+async function submitEditPhysCount() {
+  const entry = state.history[editHistoryIdx];
+  if (!entry) return;
+
+  const date       = document.getElementById('countDate').value;
+  const origBy     = document.getElementById('countName').value.trim();
+  const label      = document.getElementById('countLabel').value || '';
+  const editorName = document.getElementById('editorName')?.value.trim() || '';
+  if (!date)       { toast('⚠️ เลือกวันที่ก่อน'); return; }
+  if (!editorName) { document.getElementById('editorName')?.focus(); toast('⚠️ กรุณาใส่ชื่อผู้แก้ไข'); return; }
+  localStorage.setItem('mahut_last_name', editorName);
+
+  const items  = state[countType];
+  const actual = {}, diffs = {};
+  items.forEach(item => {
+    const el  = document.getElementById('ca_' + esc(item.name));
+    const val = el && el.value !== '' ? parseFloat(el.value) : item.stock;
+    actual[item.name] = val;
+    diffs[item.name]  = val - item.stock;
+    item.stock        = val;
+  });
+
+  const editedAt = new Date().toISOString();
+  const entries  = items.map(i => ({
+    name: i.name, recv: 0, used: 0,
+    actual: actual[i.name], diff: diffs[i.name],
+    system: actual[i.name] - diffs[i.name]
+  }));
+
+  entry.entries  = entries;
+  entry.label    = label;
+  entry.editedBy = editorName;
+  entry.editedAt = editedAt;
+  save();
+  closeModal('countModal');
+  render();
+  if (activeTab === 'physcount') renderPhysCountPane();
+  toast('💾 กำลังอัปเดต Sheets...');
+
+  if (state.apiUrl && !state.demoMode) {
+    try {
+      if (entry.ts) {
+        await fetch(state.apiUrl, {
+          method: 'POST', headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'deleteLogEntry', type: entry.type, ts: String(entry.ts) })
+        });
+      }
+      const res  = await fetch(state.apiUrl, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'physicalCount', type: countType, date,
+          by: `${origBy} (แก้ไขโดย ${editorName})`, actual, label })
+      });
+      const data = await res.json();
+      toast(data.success ? `✅ แก้ไขและบันทึก Sheets แล้ว (แก้ไขโดย ${editorName})` : `⚠️ แก้ไขในเครื่องแล้ว: ${data.error}`);
+    } catch { toast('📱 แก้ไขในเครื่องแล้ว (Sheets offline)'); }
+  } else {
+    toast(`✅ แก้ไขแล้ว (แก้ไขโดย ${editorName})`);
+  }
+  editHistoryIdx = -1;
 }
 
 function updateCountLabel() {
