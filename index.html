@@ -807,6 +807,20 @@ async function syncData() {
       .filter(e => !deleted.has(String(e.ts)))
       .sort((a, b) => String(a.ts) < String(b.ts) ? -1 : 1);
 
+    // Self-heal: tombstoned entries still in Sheets → delete them server-side so
+    // they can't corrupt computeStockForDate on other devices (no localStorage tombstone)
+    if (state.apiUrl && !state.demoMode && deleted.size > 0) {
+      [...barHist, ...contHist]
+        .filter(e => deleted.has(String(e.ts)))
+        .forEach(e => {
+          fetch(state.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'deleteLogEntry', type: e.type, ts: String(e.ts) })
+          }).catch(() => {});
+        });
+    }
+
     state.lastSync = new Date().toISOString();
     save();
 
@@ -1922,6 +1936,19 @@ async function deleteHistory(idx) {
         );
       }
     } else {
+      // Delete the original entry rows from Sheets so they won't reappear in history
+      // on devices that don't have the localStorage tombstone.
+      // The adjustStock below still writes a reverse row to keep running-stock correct.
+      if (entry.ts) {
+        jobs.push(
+          fetch(state.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'deleteLogEntry', type: entry.type, ts: String(entry.ts) })
+          }).then(r => r.json())
+        );
+      }
+
       const adjustments = (entry.entries || [])
         .filter(e => (parseFloat(e.recv) || 0) > 0 || (parseFloat(e.used) || 0) > 0)
         .map(e => ({ name: e.name, recv: parseFloat(e.recv) || 0, used: parseFloat(e.used) || 0 }));
