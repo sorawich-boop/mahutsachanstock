@@ -702,7 +702,7 @@ function emptyDataState() {
 }
 
 // ── Hardcoded API URL — no need to re-enter ──────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx4G21FybR7jdCPBTIzNLg-YrhZDxh3cKz4jiT_IGXkZ8n04VnjK-j9p4szBm_d8J0q/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwggFnK0mUU-tlqiUBzq4BKUpSfXpUZaJKA5c2RSDvJqLO9UlzVMFr1_S8htBamP3Oo/exec';
 
 const cfg = loadConfig();
 let state = { ...emptyDataState(), apiUrl: APPS_SCRIPT_URL, demoMode: false };
@@ -1717,9 +1717,12 @@ function renderDaily() {
 
   let html = '';
 
+  // Compute end-of-day stock for the selected date (not just current stock)
+  const { barStock, contStock } = computeStockForDate(dateVal);
+
   // Always show all items — pass empty agg if no activity recorded
-  html += buildDailySection('🧉', 'บาร์น้ำ', aggBar, state.bar);
-  html += buildDailySection('🥤', 'ภาชนะ', aggCont, state.container);
+  html += buildDailySection('🧉', 'บาร์น้ำ', aggBar, state.bar, barStock);
+  html += buildDailySection('🥤', 'ภาชนะ', aggCont, state.container, contStock);
 
   // Physical count section
   if (hasPhys) {
@@ -1764,7 +1767,33 @@ function renderDaily() {
     `${byText}${byText ? ' &nbsp;·&nbsp; ' : ''}สร้างเมื่อ ${new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} · Mahutsachan`;
 }
 
-function buildDailySection(icon, title, agg, allItems) {
+// Compute end-of-day stock for a given date by walking history backwards
+function computeStockForDate(dateVal) {
+  const barStock = {}, contStock = {};
+  state.bar.forEach(item => { barStock[item.name] = item.stock; });
+  state.container.forEach(item => { contStock[item.name] = item.stock; });
+
+  // state.history is oldest-first; iterate newest-first to undo changes after dateVal
+  const hist = [...(state.history || [])].reverse();
+  for (const entry of hist) {
+    if (entry.date <= dateVal) break; // reached target date — stop
+    const stock = entry.type === 'bar' ? barStock : contStock;
+    if (entry.kind === 'physicalCount') {
+      // Restore pre-count system stock
+      (entry.entries || []).forEach(e => {
+        if (e.name in stock) stock[e.name] = e.system ?? stock[e.name];
+      });
+    } else {
+      // Undo receipt/usage
+      (entry.entries || []).forEach(e => {
+        if (e.name in stock) stock[e.name] = stock[e.name] - (e.recv || 0) + (e.used || 0);
+      });
+    }
+  }
+  return { barStock, contStock };
+}
+
+function buildDailySection(icon, title, agg, allItems, stockOverride) {
   // Show ALL items in sheet column order; highlight those with activity
   const totalRecv = Object.values(agg).reduce((s,v) => s + (v.recv||0), 0);
   const totalUsed = Object.values(agg).reduce((s,v) => s + (v.used||0), 0);
@@ -1785,7 +1814,8 @@ function buildDailySection(icon, title, agg, allItems) {
     const recv = activity?.recv || 0;
     const used = activity?.used || 0;
     const hasActivity = recv > 0 || used > 0;
-    const st = item.stock <= 0 ? 'crit' : item.stock <= item.min ? 'low' : '';
+    const remaining = stockOverride ? (stockOverride[item.name] ?? item.stock) : item.stock;
+    const st = remaining <= 0 ? 'crit' : remaining <= item.min ? 'low' : '';
     // Highlight rows that had activity with a subtle background
     const rowStyle = hasActivity ? 'background:#f5f9ff;' : '';
     html += `<tr style="${rowStyle}">
@@ -1793,7 +1823,7 @@ function buildDailySection(icon, title, agg, allItems) {
       <td>${item.name}<span style="color:var(--muted);font-size:11px;margin-left:4px">${item.unit}</span></td>
       <td class="${recv > 0 ? 'ds-recv' : ''}">${recv > 0 ? '+' + recv : '—'}</td>
       <td class="${used > 0 ? 'ds-used' : ''}">${used > 0 ? used : '—'}</td>
-      <td class="ds-bal ${st}">${item.stock}</td>
+      <td class="ds-bal ${st}">${remaining}</td>
     </tr>`;
   });
 
