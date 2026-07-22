@@ -1634,11 +1634,7 @@ async function downloadCountCard({ date, label, by, type, entries }) {
       });
     }
     const canvas = await html2canvas(card, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
-    const link = document.createElement('a');
-    link.download = `count_${date}_${type}.jpg`;
-    link.href = canvas.toDataURL('image/jpeg', 0.95);
-    link.click();
-    toast('✅ เซฟรูปนับจริงแล้ว ส่ง LINE ได้เลย 🚀');
+    await saveCanvasImage(canvas, `count_${date}_${type}.jpg`);
   } catch(err) {
     toast('❌ สร้างรูปไม่สำเร็จ: ' + err.message);
   } finally {
@@ -1884,13 +1880,7 @@ async function saveDailyImage() {
       }
     });
 
-    // Download as JPG
-    const link = document.createElement('a');
-    link.download = `stock_${dateVal}.jpg`;
-    link.href = canvas.toDataURL('image/jpeg', 0.95);
-    link.click();
-
-    toast('✅ เซฟรูปเรียบร้อย ส่ง LINE ได้เลย 🚀');
+    await saveCanvasImage(canvas, `stock_${dateVal}.jpg`);
   } catch (err) {
     toast('❌ เกิดข้อผิดพลาด: ' + err.message);
     console.error(err);
@@ -1898,6 +1888,68 @@ async function saveDailyImage() {
     btn.disabled = false;
     btn.textContent = '📥 เซฟรูป';
   }
+}
+
+// Reliable image save across desktop + mobile (iOS Safari, Android, LINE in-app browser).
+// Uses Blob + object URL instead of a giant data-URL (which silently fails on mobile),
+// with a new-tab fallback so users can long-press → save the picture.
+async function saveCanvasImage(canvas, filename) {
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95));
+  if (!blob) { toast('❌ สร้างรูปไม่สำเร็จ'); return; }
+
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const inAppBrowser = /Line|FBAN|FBAV|Instagram/i.test(ua);
+
+  // Preferred path: native share sheet (mobile) — lets user save to Photos or send to LINE
+  if (navigator.canShare) {
+    try {
+      const file = new File([blob], filename, { type: 'image/jpeg' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        toast('✅ เลือกที่จะบันทึกหรือส่งได้เลย 🚀');
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // user cancelled the share sheet
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+
+  // iOS / in-app browsers ignore the download attribute → open image so user can long-press → Save Image
+  if (isIOS || inAppBrowser) {
+    const win = window.open(url, '_blank');
+    if (!win) {
+      // Popup blocked: show inline overlay with the image to long-press
+      showImageOverlay(url);
+    }
+    toast('📷 กดค้างที่รูปแล้วเลือก "บันทึกรูปภาพ"');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return;
+  }
+
+  // Desktop / Android Chrome: normal download
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = url;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast('✅ เซฟรูปเรียบร้อย ส่ง LINE ได้เลย 🚀');
+}
+
+// Fallback overlay: full-screen image the user can long-press to save (when popups are blocked)
+function showImageOverlay(url) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;overflow:auto';
+  ov.innerHTML = `
+    <div style="color:#fff;font-size:14px;margin-bottom:10px;text-align:center">กดค้างที่รูปแล้วเลือก "บันทึกรูปภาพ"</div>
+    <img src="${url}" style="max-width:100%;height:auto;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5)">
+    <button style="margin-top:14px;padding:10px 24px;border:0;border-radius:8px;background:#fff;font-size:15px;font-weight:600">ปิด</button>`;
+  ov.querySelector('button').onclick = () => { ov.remove(); URL.revokeObjectURL(url); };
+  document.body.appendChild(ov);
 }
 
 async function deleteHistory(idx) {
@@ -2243,11 +2295,7 @@ async function savePhysCountImage() {
       });
     }
     const canvas = await html2canvas(wrap, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
-    const link = document.createElement('a');
-    link.download = `count_${session.date}_${session.type}.jpg`;
-    link.href = canvas.toDataURL('image/jpeg', 0.95);
-    link.click();
-    toast('✅ เซฟรูปนับจริงแล้ว ส่ง LINE ได้เลย 🚀');
+    await saveCanvasImage(canvas, `count_${session.date}_${session.type}.jpg`);
   } catch(err) {
     toast('❌ เกิดข้อผิดพลาด: ' + err.message);
   } finally {
