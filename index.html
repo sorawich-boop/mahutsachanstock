@@ -1730,9 +1730,15 @@ function renderDaily() {
   // Compute end-of-day stock for the selected date (not just current stock)
   const { barStock, contStock } = computeStockForDate(dateVal);
 
+  // Compute previous day's end-of-day stock (ยกมา / brought-forward column)
+  const pd = new Date(dateVal + 'T12:00:00');
+  pd.setDate(pd.getDate() - 1);
+  const prevDateVal = `${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,'0')}-${String(pd.getDate()).padStart(2,'0')}`;
+  const { barStock: barPrev, contStock: contPrev } = computeStockForDate(prevDateVal);
+
   // Always show all items — pass empty agg if no activity recorded
-  html += buildDailySection('🧉', 'บาร์น้ำ', aggBar, state.bar, barStock);
-  html += buildDailySection('🥤', 'ภาชนะ', aggCont, state.container, contStock);
+  html += buildDailySection('🧉', 'บาร์น้ำ', aggBar, state.bar, barStock, barPrev);
+  html += buildDailySection('🥤', 'ภาชนะ', aggCont, state.container, contStock, contPrev);
 
   // Physical count section
   if (hasPhys) {
@@ -1803,7 +1809,7 @@ function computeStockForDate(dateVal) {
   return { barStock, contStock };
 }
 
-function buildDailySection(icon, title, agg, allItems, stockOverride) {
+function buildDailySection(icon, title, agg, allItems, stockOverride, prevStock) {
   // Show ALL items in sheet column order; highlight those with activity
   const totalRecv = Object.values(agg).reduce((s,v) => s + (v.recv||0), 0);
   const totalUsed = Object.values(agg).reduce((s,v) => s + (v.used||0), 0);
@@ -1816,7 +1822,7 @@ function buildDailySection(icon, title, agg, allItems, stockOverride) {
       <span class="ds-count">รับ +${totalRecv} · เบิก −${totalUsed} · เคลื่อนไหว ${activeCount} รายการ</span>
     </div>
     <table class="ds-table">
-      <thead><tr><th>#</th><th>สินค้า</th><th>รับ (+)</th><th>เบิก (−)</th><th>คงเหลือ</th></tr></thead>
+      <thead><tr><th>#</th><th>สินค้า</th><th>ยกมา</th><th>รับ (+)</th><th>เบิก (−)</th><th>คงเหลือ</th></tr></thead>
       <tbody>`;
 
   allItems.forEach((item, idx) => {
@@ -1825,12 +1831,14 @@ function buildDailySection(icon, title, agg, allItems, stockOverride) {
     const used = activity?.used || 0;
     const hasActivity = recv > 0 || used > 0;
     const remaining = stockOverride ? (stockOverride[item.name] ?? item.stock) : item.stock;
+    const prev = prevStock ? (prevStock[item.name] ?? '—') : '—';
     const st = remaining <= 0 ? 'crit' : remaining <= item.min ? 'low' : '';
     // Highlight rows that had activity with a subtle background
     const rowStyle = hasActivity ? 'background:#f5f9ff;' : '';
     html += `<tr style="${rowStyle}">
       <td style="color:var(--muted);font-size:11px;text-align:right;padding-right:6px">${idx+1}</td>
       <td>${item.name}<span style="color:var(--muted);font-size:11px;margin-left:4px">${item.unit}</span></td>
+      <td style="color:var(--muted)">${prev}</td>
       <td class="${recv > 0 ? 'ds-recv' : ''}">${recv > 0 ? '+' + recv : '—'}</td>
       <td class="${used > 0 ? 'ds-used' : ''}">${used > 0 ? used : '—'}</td>
       <td class="ds-bal ${st}">${remaining}</td>
