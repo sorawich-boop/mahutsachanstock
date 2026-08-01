@@ -1730,15 +1730,9 @@ function renderDaily() {
   // Compute end-of-day stock for the selected date (not just current stock)
   const { barStock, contStock } = computeStockForDate(dateVal);
 
-  // Compute previous day's end-of-day stock (ยกมา / brought-forward column)
-  const pd = new Date(dateVal + 'T12:00:00');
-  pd.setDate(pd.getDate() - 1);
-  const prevDateVal = `${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,'0')}-${String(pd.getDate()).padStart(2,'0')}`;
-  const { barStock: barPrev, contStock: contPrev } = computeStockForDate(prevDateVal);
-
   // Always show all items — pass empty agg if no activity recorded
-  html += buildDailySection('🧉', 'บาร์น้ำ', aggBar, state.bar, barStock, barPrev);
-  html += buildDailySection('🥤', 'ภาชนะ', aggCont, state.container, contStock, contPrev);
+  html += buildDailySection('🧉', 'บาร์น้ำ', aggBar, state.bar, barStock);
+  html += buildDailySection('🥤', 'ภาชนะ', aggCont, state.container, contStock);
 
   // Physical count section
   if (hasPhys) {
@@ -1809,7 +1803,7 @@ function computeStockForDate(dateVal) {
   return { barStock, contStock };
 }
 
-function buildDailySection(icon, title, agg, allItems, stockOverride, prevStock) {
+function buildDailySection(icon, title, agg, allItems, stockOverride) {
   // Show ALL items in sheet column order; highlight those with activity
   const totalRecv = Object.values(agg).reduce((s,v) => s + (v.recv||0), 0);
   const totalUsed = Object.values(agg).reduce((s,v) => s + (v.used||0), 0);
@@ -1831,7 +1825,10 @@ function buildDailySection(icon, title, agg, allItems, stockOverride, prevStock)
     const used = activity?.used || 0;
     const hasActivity = recv > 0 || used > 0;
     const remaining = stockOverride ? (stockOverride[item.name] ?? item.stock) : item.stock;
-    const prev = prevStock ? (prevStock[item.name] ?? '—') : '—';
+    // ยกมา = effective opening balance for the day = closing − recv + used.
+    // On a นับจริง day this equals the count's actual value (count resets the baseline);
+    // on normal days it equals the previous day's closing. Always balances: ยกมา + รับ − เบิก = คงเหลือ.
+    const prev = (typeof remaining === 'number') ? (remaining - recv + used) : '—';
     const st = remaining <= 0 ? 'crit' : remaining <= item.min ? 'low' : '';
     // Highlight rows that had activity with a subtle background
     const rowStyle = hasActivity ? 'background:#f5f9ff;' : '';
