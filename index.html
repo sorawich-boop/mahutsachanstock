@@ -245,7 +245,7 @@ tr.row-yellow { background: #fffef5; }
 .ds-section-head .ds-icon { font-size: 16px; }
 .ds-section-head .ds-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; }
 .ds-section-head .ds-count { margin-left: auto; font-size: 12px; color: var(--muted); background: #f5f3f0; padding: 2px 8px; border-radius: 10px; }
-.ds-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ds-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 0; }
 .ds-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 5px 8px; text-align: right; background: #faf9f7; }
 .ds-table th:first-child { text-align: left; }
 .ds-table td { padding: 7px 8px; border-top: 1px solid #f5f3f0; text-align: right; vertical-align: middle; }
@@ -257,6 +257,21 @@ tr.row-yellow { background: #fffef5; }
 .ds-bal.low { color: var(--yellow); }
 .ds-bal.crit { color: var(--red); }
 .ds-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+.ds-unit { white-space: nowrap; }
+
+/* ── Daily card: fit all 6 columns on phone screens ── */
+@media (max-width: 480px) {
+  #dailyCardBody { padding: 12px 10px !important; }
+  .ds-section-head .ds-count { font-size: 10px; padding: 2px 6px; }
+  .ds-table-daily { font-size: 11.5px; table-layout: fixed; width: 100%; min-width: 0; }
+  .ds-table-daily th { font-size: 8.5px; padding: 4px 2px; letter-spacing: 0; }
+  .ds-table-daily td { padding: 6px 2px; }
+  .ds-table-daily th:first-child, .ds-table-daily td:first-child { width: 16px; padding-left: 1px; padding-right: 3px; }
+  /* สินค้า name column takes remaining space and wraps; number columns stay narrow */
+  .ds-table-daily th:nth-child(2), .ds-table-daily td:nth-child(2) { width: auto; word-break: break-word; overflow-wrap: anywhere; }
+  .ds-table-daily th:nth-child(n+3), .ds-table-daily td:nth-child(n+3) { width: 40px; }
+  .ds-table-daily .ds-unit { display: block; margin-left: 0 !important; font-size: 10px; }
+}
 .ds-nochange { color: #bbb; font-size: 12px; padding: 10px 0; text-align: center; }
 .ds-stat-row { display: flex; gap: 0; border-top: 2px solid #f0ece6; margin-top: 8px; }
 .ds-stat { flex: 1; text-align: center; padding: 10px 6px; border-right: 1px solid #f5f3f0; }
@@ -1815,7 +1830,7 @@ function buildDailySection(icon, title, agg, allItems, stockOverride) {
       <span class="ds-title">${title}</span>
       <span class="ds-count">รับ +${totalRecv} · เบิก −${totalUsed} · เคลื่อนไหว ${activeCount} รายการ</span>
     </div>
-    <table class="ds-table">
+    <table class="ds-table ds-table-daily">
       <thead><tr><th>#</th><th>สินค้า</th><th>ยกมา</th><th>รับ (+)</th><th>เบิก (−)</th><th>คงเหลือ</th></tr></thead>
       <tbody>`;
 
@@ -1834,7 +1849,7 @@ function buildDailySection(icon, title, agg, allItems, stockOverride) {
     const rowStyle = hasActivity ? 'background:#f5f9ff;' : '';
     html += `<tr style="${rowStyle}">
       <td style="color:var(--muted);font-size:11px;text-align:right;padding-right:6px">${idx+1}</td>
-      <td>${item.name}<span style="color:var(--muted);font-size:11px;margin-left:4px">${item.unit}</span></td>
+      <td>${item.name}<span class="ds-unit" style="color:var(--muted);font-size:11px;margin-left:4px">${item.unit}</span></td>
       <td style="color:var(--muted)">${prev}</td>
       <td class="${recv > 0 ? 'ds-recv' : ''}">${recv > 0 ? '+' + recv : '—'}</td>
       <td class="${used > 0 ? 'ds-used' : ''}">${used > 0 ? used : '—'}</td>
