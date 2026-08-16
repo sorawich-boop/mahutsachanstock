@@ -414,6 +414,7 @@ tr.row-yellow { background: #fffef5; }
   <div class="tabs">
     <button class="tab active" onclick="switchTab('bar',this)">🧉 บาร์น้ำ</button>
     <button class="tab" onclick="switchTab('container',this)">🥤 ภาชนะ</button>
+    <button class="tab" onclick="switchTab('kitchen',this)">🍳 ครัว</button>
     <button class="tab" onclick="switchTab('daily',this)">📊 รายวัน</button>
     <button class="tab" onclick="switchTab('physcount',this)">🔢 นับจริง</button>
     <button class="tab" onclick="switchTab('history',this)">📋 ประวัติ</button>
@@ -453,6 +454,23 @@ tr.row-yellow { background: #fffef5; }
     <div class="table-wrap"><table><thead><tr><th>สินค้า</th><th>คงเหลือ</th><th>หน่วย</th><th>สถานะ</th><th>Min</th><th></th></tr></thead><tbody id="tbody-container"></tbody></table></div>
   </div>
 
+  <!-- TAB: kitchen -->
+  <div id="pane-kitchen" style="display:none">
+    <div class="toolbar">
+      <input class="search" type="text" placeholder="🔍 ค้นหา..." oninput="onSearch('kitchen',this.value)" />
+      <div class="filter-group">
+        <button class="filt on" onclick="onFilter('kitchen','all',this)">ทั้งหมด</button>
+        <button class="filt" onclick="onFilter('kitchen','low',this)">🔴 ใกล้หมด</button>
+        <button class="filt" onclick="onFilter('kitchen','ok',this)">✅ ปกติ</button>
+      </div>
+      <button class="btn btn-secondary hide-mobile" onclick="openThresh('kitchen')">⚙️ Min</button>
+      <button class="btn btn-secondary hide-mobile" onclick="openAddItem('kitchen')" style="color:var(--green);border-color:var(--green)">＋ เพิ่มสินค้า</button>
+      <button class="btn btn-primary ml-auto hide-mobile" onclick="openEntry('kitchen')">+ บันทึก</button>
+    </div>
+    <div id="kitchenCatBar" style="display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 10px"></div>
+    <div class="table-wrap"><table><thead><tr><th>สินค้า</th><th>คงเหลือ</th><th>หน่วย</th><th>สถานะ</th><th>Min</th><th></th></tr></thead><tbody id="tbody-kitchen"></tbody></table></div>
+  </div>
+
   <!-- TAB: daily summary -->
   <div id="pane-daily" style="display:none">
     <div class="toolbar" style="align-items:center">
@@ -483,6 +501,25 @@ tr.row-yellow { background: #fffef5; }
 
       <!-- Footer -->
       <div style="background:#f6f4f1;padding:10px 22px;font-size:11px;color:var(--muted);text-align:right" id="dailyCardFooter"></div>
+    </div>
+
+    <!-- Separate kitchen daily card (shown only on days with kitchen activity) -->
+    <div id="kitchenDailyBlock" style="max-width:680px;margin:22px auto 0;display:none">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn btn-primary" id="saveKitchenImgBtn" onclick="saveKitchenDailyImage()">📥 เซฟรูปครัว</button>
+      </div>
+      <div id="dailyCardKitchen" style="background:white;border:1px solid var(--border);border-radius:14px;overflow:hidden">
+        <div style="background:#1c1916;color:white;padding:18px 22px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.6;margin-bottom:4px">Mahutsachan Cafe · Khlong Thom</div>
+            <div style="font-size:18px;font-weight:700">🍳 สรุปสต๊อคครัวประจำวัน</div>
+            <div style="font-size:13px;opacity:.75;margin-top:3px" id="dailyCardKitchenDate">—</div>
+          </div>
+          <img id="dailyKitchenLogo" src="" style="width:54px;height:54px;object-fit:contain;border-radius:10px;opacity:.9" />
+        </div>
+        <div style="padding:18px 22px" id="dailyCardKitchenBody"></div>
+        <div style="background:#f6f4f1;padding:10px 22px;font-size:11px;color:var(--muted);text-align:right" id="dailyCardKitchenFooter"></div>
+      </div>
     </div>
   </div>
 
@@ -709,18 +746,119 @@ function emptyDataState() {
   return {
     bar:      [],
     container:[],
+    kitchen:  [],
     history:  [],
     lastSync: null,
-    filters:  { bar:'all', container:'all' },
-    searches: { bar:'', container:'' }
+    filters:  { bar:'all', container:'all', kitchen:'all' },
+    searches: { bar:'', container:'', kitchen:'' }
   };
 }
 
 // ── Hardcoded API URL — no need to re-enter ──────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwggFnK0mUU-tlqiUBzq4BKUpSfXpUZaJKA5c2RSDvJqLO9UlzVMFr1_S8htBamP3Oo/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7r5chJc-nF7KdXqFa-RqxDcF0a2ORzCllGb7GlwvRsTE_9Ltd6AHOrvViWl2r0iTg/exec';
+
+// ── Kitchen first-run seed (imported from the master Google Sheet) ──
+const KITCHEN_SEED_RAW = [
+  {n:"เนื้อสันในออสเตรเลีย",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"เนื้อสันในไทย",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"เนื้อบด",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"แซลมอน",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"ปลากระพง",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"อกไก่",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"เนื้อไก่บด",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"เนื้อสะโพกไก่",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"กุ้งขาวไซส์ใหญ่",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"หมึก",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"ปีกไก่กลาง",u:"กรัม",c:"เนื้อสัตว์"},
+  {n:"เส้นปลา",u:"เส้น",c:"เนื้อสัตว์"},
+  {n:"ลูกชิ้นปลา",u:"แพ็ค",c:"เนื้อสัตว์"},
+  {n:"ทอดมันปลาอินทรีย์",u:"แพ็ค",c:"เนื้อสัตว์"},
+  {n:"หอยแมลงภู่นิวซีแลนด์",u:"กก.",c:"เนื้อสัตว์"},
+  {n:"เส้นจันทน์ผัดไทย",u:"กก.",c:"ของแห้ง"},
+  {n:"เส้นสปาเก็ตตี้",u:"กก.",c:"ของแห้ง"},
+  {n:"เส้นตักยาเตเล่",u:"กก",c:"ของแห้ง"},
+  {n:"เชดด้าชีสแผ่น",u:"แพ็ค",c:"ของแห้ง"},
+  {n:"พาเมซานชีส",u:"กป",c:"ของแห้ง"},
+  {n:"มอสเซอเรล่าชีสขูด",u:"กก.",c:"ของแห้ง"},
+  {n:"แฮมไก่",u:"แพ็ค",c:"ของแห้ง"},
+  {n:"ไข่ไก่",u:"แผง",c:"ของแห้ง"},
+  {n:"ข้าวสาร",u:"กก.",c:"ของแห้ง"},
+  {n:"แป้งพิซซ่า",u:"กก.",c:"ของแห้ง"},
+  {n:"แผ่นแป้งตอตีย่า",u:"แพ็ค",c:"ของแห้ง"},
+  {n:"แผ่นปอเปี๊ยะ",u:"แพ็ค",c:"ของแห้ง"},
+  {n:"น้ำมันมะกอก",u:"ลิตร",c:"ของแห้ง"},
+  {n:"น้ำมันพืช",u:"ลิตร",c:"ของแห้ง"},
+  {n:"ขนมปังแซนวิช",u:"ชิ้น",c:"ของแห้ง"},
+  {n:"บันเบอร์เกอร์",u:"ชิ้น",c:"ของแห้ง"},
+  {n:"ซอสมะเขือ Polpa",u:"กป.",c:"ของแห้ง"},
+  {n:"น้ำปลา",u:"ลิตร",c:"ของแห้ง"},
+  {n:"น้ำตาล",u:"กก.",c:"ของแห้ง"},
+  {n:"ผงปรุงรส",u:"กรัม",c:"ของแห้ง"},
+  {n:"น้ำจิ้มไก่",u:"ลิตร",c:"ของแห้ง"},
+  {n:"น้ำมะขามเปียก",u:"ลิตร",c:"ของแห้ง"},
+  {n:"มายองเนส",u:"กก.",c:"ของแห้ง"},
+  {n:"โชยุ",u:"ลิตร",c:"ของแห้ง"},
+  {n:"ซอสพิซซ่า",u:"กก.",c:"Home made"},
+  {n:"ซอสผัดไทย",u:"กก.",c:"Home made"},
+  {n:"มัดบด",u:"กก",c:"Home made"},
+  {n:"แกงเนื้อ",u:"กรัม",c:"Home made"},
+  {n:"ผักโขมผัด",u:"กก.",c:"Home made"},
+  {n:"แป้งพิซซ่าสำเร็จ",u:"ก้อน",c:"Home made"},
+  {n:"น้ำพริกมะขาม",u:"กก.",c:"Home made"},
+  {n:"เปาครีม",u:"P.",c:"Home made"},
+  {n:"เปาช็อค",u:"P.",c:"Home made"},
+  {n:"เปาไก่แดง",u:"P.",c:"Home made"},
+  {n:"ซาลาเปาไข่เค็ม",u:"P.",c:"Home made"},
+  {n:"สาหร่ายห่อกุ้ง",u:"P.",c:"Home made"},
+  {n:"ฮะเก๋า",u:"P.",c:"Home made"},
+  {n:"ขนมจีบกุ้ง",u:"P.",c:"Home made"},
+  {n:"มันฝรั่ง",u:"กก.",c:"ผัก"},
+  {n:"มะเขือเทศสด",u:"กก.",c:"ผัก"},
+  {n:"มะเขือเทศราชินี",u:"กรัม",c:"ผัก"},
+  {n:"หอมใหญ่",u:"กก.",c:"ผัก"},
+  {n:"แครอท",u:"กก.",c:"ผัก"},
+  {n:"แตงกวา",u:"กก.",c:"ผัก"},
+  {n:"เรด,กรีน,ไอซ์",u:"กก.",c:"ผัก"},
+  {n:"เห็ดออรินจิ",u:"กก.",c:"ผัก"},
+  {n:"เห็ดนางรมหลวง",u:"กก.",c:"ผัก"},
+  {n:"ผักโขมแช่แข็ง",u:"กก.",c:"ผัก"},
+  {n:"กระเทียม",u:"กก.",c:"ผัก"},
+  {n:"หอมแดง",u:"กก.",c:"ผัก"},
+  {n:"สับปะรด",u:"ลูก",c:"ผัก"},
+  {n:"แรดิช",u:"กก.",c:"ผัก"},
+  {n:"ฟินเล่ย์",u:"กก.",c:"ผัก"},
+  {n:"ผักครอส",u:"กก.",c:"ผัก"},
+  {n:"พริกสด",u:"กก.",c:"ผัก"},
+  {n:"พริกชี้ฟ้า",u:"กก.",c:"ผัก"},
+  {n:"ผักชี",u:"กก.",c:"ผัก"},
+  {n:"ต้นหอม",u:"กก.",c:"ผัก"},
+  {n:"ขึ้นฉ่าย",u:"กก.",c:"ผัก"},
+  {n:"กุยฉ่าย",u:"กก.",c:"ผัก"},
+  {n:"ข่า",u:"กก.",c:"ผัก"},
+  {n:"ตะไคร้",u:"กก.",c:"ผัก"},
+  {n:"ใบมะกรูด",u:"กก.",c:"ผัก"},
+  {n:"โหระพา",u:"กก.",c:"ผัก"},
+  {n:"กะเพรา",u:"กก.",c:"ผัก"},
+  {n:"ถั่วฝักยาว",u:"กก.",c:"ผัก"},
+  {n:"ไชโป๊",u:"กก.",c:"ผัก"},
+  {n:"ถั่วงอก",u:"กก.",c:"ผัก"},
+  {n:"คะน้า",u:"กก.",c:"ผัก"},
+  {n:"ขิงซอย",u:"กก.",c:"ผัก"},
+  {n:"บรอกโคลี",u:"กก.",c:"ผัก"},
+  {n:"ดอกกะหล่ำ",u:"กก.",c:"ผัก"},
+  {n:"มะนาว",u:"กก.",c:"ผัก"}
+];
+const KITCHEN_SEED = KITCHEN_SEED_RAW.map(function(o){return {name:o.n,unit:o.u,cat:o.c,min:0};});
+// kitchenBackendOK = the deployed Apps Script actually has a kitchen sheet wired up.
+// Guards every kitchen server write so nothing is sent to the wrong spreadsheet
+// if this app is opened before Code.gs is redeployed with a real KITCHEN_SPREADSHEET_ID.
+let kitchenBackendOK = false;
+let kitchenSeedPushed = false;
 
 const cfg = loadConfig();
 let state = { ...emptyDataState(), apiUrl: APPS_SCRIPT_URL, demoMode: false };
+// Show the imported kitchen items immediately (before first sync / setup)
+if (!state.kitchen.length) state.kitchen = KITCHEN_SEED.map(c => ({ name: c.name, unit: c.unit, cat: c.cat, min: c.min || 0, stock: 0 }));
 
 let activeTab = 'bar';
 let entryType = 'bar';
@@ -807,25 +945,36 @@ async function syncData() {
     // 1. Catalog — server is source of truth
     const barCatalog  = data.barCatalog       || [];
     const contCatalog = data.containerCatalog || [];
+    const kitCatalog  = data.kitchenCatalog   || [];
+    kitchenBackendOK = !!data.kitchenReady;
     if (barCatalog.length)  mergeCatalog('bar',       barCatalog);
     if (contCatalog.length) mergeCatalog('container', contCatalog);
+    if (kitCatalog.length)  mergeCatalog('kitchen',   kitCatalog);
+    // First-run: push the built-in kitchen catalog to the kitchen sheet when it's still empty
+    if (kitchenBackendOK && !kitCatalog.length && !kitchenSeedPushed) {
+      if (!state.kitchen.length) mergeCatalog('kitchen', KITCHEN_SEED);
+      pushCatalog('kitchen');
+      kitchenSeedPushed = true;
+    }
 
     // 2. Stock levels from Log — server always wins
     mergeStock('bar',       data.bar?.items       || []);
     mergeStock('container', data.container?.items || []);
+    mergeStock('kitchen',   data.kitchen?.items   || []);
 
     // 3. History from Sheets — fully replaces local history on every sync
     const deleted  = new Set(JSON.parse(localStorage.getItem('mahut_del_ts') || '[]'));
     const barHist  = (data.barHistory  || []).map(e => ({ ...e, type: 'bar' }));
     const contHist = (data.containerHistory || []).map(e => ({ ...e, type: 'container' }));
-    state.history  = [...barHist, ...contHist]
+    const kitHist  = (data.kitchenHistory || []).map(e => ({ ...e, type: 'kitchen' }));
+    state.history  = [...barHist, ...contHist, ...kitHist]
       .filter(e => !deleted.has(String(e.ts)))
       .sort((a, b) => String(a.ts) < String(b.ts) ? -1 : 1);
 
     // Self-heal: tombstoned entries still in Sheets → delete them server-side so
     // they can't corrupt computeStockForDate on other devices (no localStorage tombstone)
     if (state.apiUrl && !state.demoMode && deleted.size > 0) {
-      [...barHist, ...contHist]
+      [...barHist, ...contHist, ...kitHist]
         .filter(e => deleted.has(String(e.ts)))
         .forEach(e => {
           fetch(state.apiUrl, {
@@ -888,6 +1037,7 @@ function mergeStock(type, serverItems) {
 // Push local catalog to backend (called after any add/edit/delete)
 async function pushCatalog(type) {
   if (!state.apiUrl || state.demoMode) return;
+  if (type === 'kitchen' && !kitchenBackendOK) return;
   const catalog = state[type].map((item, idx) => ({
     name: item.name, unit: item.unit, cat: item.cat || 'อื่นๆ', min: item.min, order: idx + 1
   }));
@@ -934,6 +1084,7 @@ function render() {
   renderAlerts();
   renderTable('bar');
   renderTable('container');
+  renderKitchenTable();
   renderHistory();
 }
 
@@ -944,7 +1095,7 @@ function status(item) {
 }
 
 function renderSummary() {
-  const all = [...state.bar, ...state.container];
+  const all = [...state.bar, ...state.container, ...state.kitchen];
   const crit = all.filter(i => i.stock <= 0).length;
   const low  = all.filter(i => i.stock > 0 && i.stock <= i.min).length;
   const ok   = all.filter(i => i.stock > i.min).length;
@@ -957,7 +1108,7 @@ function renderSummary() {
 }
 
 function renderAlerts() {
-  const all = [...state.bar, ...state.container];
+  const all = [...state.bar, ...state.container, ...state.kitchen];
   const low = all.filter(i => i.stock <= i.min);
   const bar = document.getElementById('alertBar');
   const chips = document.getElementById('alertChips');
@@ -1011,13 +1162,106 @@ function renderTable(type) {
   }).join('');
 }
 
+// ════════════════════════════════════════════════════════
+// KITCHEN TABLE  (grouped by หมวด/category + category filter chips)
+// ════════════════════════════════════════════════════════
+
+let kitchenCat = 'all';
+
+function kitchenCategories() {
+  const seen = [];
+  state.kitchen.forEach(i => { const c = i.cat || 'อื่นๆ'; if (!seen.includes(c)) seen.push(c); });
+  return seen;
+}
+
+function renderKitchenCatChips() {
+  const bar = document.getElementById('kitchenCatBar');
+  if (!bar) return;
+  const cats = kitchenCategories();
+  if (!cats.length) { bar.innerHTML = ''; return; }
+  // Reset selection if the active category no longer exists
+  if (kitchenCat !== 'all' && !cats.includes(kitchenCat)) kitchenCat = 'all';
+  const chip = (val, label, n) =>
+    `<button class="filt${kitchenCat === val ? ' on' : ''}" onclick="onKitchenCat('${String(val).replace(/'/g, "\\'")}',this)">${label} <span style="opacity:.55">${n}</span></button>`;
+  let html = chip('all', 'ทั้งหมด', state.kitchen.length);
+  cats.forEach(c => { html += chip(c, c, state.kitchen.filter(i => (i.cat || 'อื่นๆ') === c).length); });
+  bar.innerHTML = html;
+}
+
+function onKitchenCat(cat, btn) {
+  kitchenCat = cat;
+  const bar = document.getElementById('kitchenCatBar');
+  if (bar) bar.querySelectorAll('.filt').forEach(b => b.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+  renderKitchenTable();
+}
+
+function kitchenRowHTML(item) {
+  const st = status(item);
+  const pct = Math.min(100, Math.round(item.stock / Math.max(1, item.min * 3) * 100));
+  const rowCls = st === 'critical' ? 'row-red' : st === 'low' ? 'row-yellow' : '';
+  const badge = st === 'critical' ? '<span class="badge badge-red">🔴 หมด</span>'
+              : st === 'low'      ? '<span class="badge badge-yellow">🟡 น้อย</span>'
+              :                     '<span class="badge badge-green">✅ ปกติ</span>';
+  const barCls = st === 'critical' ? 'bar-red' : st === 'low' ? 'bar-yellow' : 'bar-green';
+  return `<tr class="${rowCls}">
+    <td><div class="item-name">${item.name}</div><div class="item-cat">${item.cat || ''}</div></td>
+    <td>
+      <span class="stock-val">${item.stock}</span>
+      <div class="bar-wrap"><div class="bar-fill ${barCls}" style="width:${pct}%"></div></div>
+    </td>
+    <td style="font-size:13px;font-weight:600;color:var(--muted)">${item.unit}</td>
+    <td>${badge}</td>
+    <td style="color:var(--muted);font-size:13px">${item.min}</td>
+    <td style="white-space:nowrap">
+      <button class="edit-btn" onclick="quickEdit('kitchen','${item.name}')">✏️</button>
+      <button class="edit-btn" onclick="openEditItem('kitchen','${item.name}')" style="margin-left:4px">⚙️</button>
+      <button class="edit-btn" onclick="deleteItem('kitchen','${item.name}')" style="margin-left:4px;color:var(--red);border-color:#f5c6c4">🗑</button>
+    </td>
+  </tr>`;
+}
+
+function renderKitchenTable() {
+  renderKitchenCatChips();
+  const tbody = document.getElementById('tbody-kitchen');
+  if (!tbody) return;
+  const filter = state.filters.kitchen || 'all';
+  const search = (state.searches.kitchen || '').toLowerCase();
+
+  const items = state.kitchen.filter(item => {
+    const st = status(item);
+    const matchF = filter === 'all' || (filter === 'low' && st !== 'ok') || (filter === 'ok' && st === 'ok');
+    const matchS = !search || item.name.toLowerCase().includes(search) || (item.cat || '').toLowerCase().includes(search);
+    const matchC = kitchenCat === 'all' || (item.cat || 'อื่นๆ') === kitchenCat;
+    return matchF && matchS && matchC;
+  });
+
+  if (!items.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">ไม่พบรายการ</td></tr>';
+    return;
+  }
+
+  const order = kitchenCategories();
+  const groups = {};
+  items.forEach(i => { const c = i.cat || 'อื่นๆ'; (groups[c] = groups[c] || []).push(i); });
+
+  let html = '';
+  order.forEach(cat => {
+    const list = groups[cat];
+    if (!list || !list.length) return;
+    html += `<tr class="cat-head"><td colspan="6" style="background:#f3efe9;font-weight:800;font-size:12px;letter-spacing:.3px;color:#6b5e4e;padding:8px 12px;border-top:2px solid var(--border)">🍳 ${cat} <span style="opacity:.6;font-weight:600">(${list.length})</span></td></tr>`;
+    list.forEach(item => { html += kitchenRowHTML(item); });
+  });
+  tbody.innerHTML = html;
+}
+
 function renderHistory() {
   const wrap = document.getElementById('historyWrap');
   const hist = [...(state.history||[])].reverse().slice(0, 40);
   if (!hist.length) { wrap.innerHTML = '<div class="h-empty">ยังไม่มีประวัติ</div>'; return; }
   wrap.innerHTML = hist.map((entry, i) => {
     const realIdx = state.history.length - 1 - i;
-    const typeLabel = entry.type === 'bar' ? '🧉 บาร์น้ำ' : '🥤 ภาชนะ';
+    const typeLabel = entry.type === 'bar' ? '🧉 บาร์น้ำ' : entry.type === 'kitchen' ? '🍳 ครัว' : '🥤 ภาชนะ';
 
     let tags = '';
     if (entry.kind === 'physicalCount') {
@@ -1051,7 +1295,7 @@ function renderHistory() {
 // ════════════════════════════════════════════════════════
 
 function switchTab(tab, btn) {
-  ['bar','container','daily','physcount','history'].forEach(t => {
+  ['bar','container','kitchen','daily','physcount','history'].forEach(t => {
     document.getElementById('pane-'+t).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
@@ -1066,12 +1310,12 @@ function onFilter(type, f, btn) {
   state.filters[type] = f;
   btn.closest('.filter-group').querySelectorAll('.filt').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
-  renderTable(type);
+  if (type === 'kitchen') renderKitchenTable(); else renderTable(type);
 }
 
 function onSearch(type, val) {
   state.searches[type] = val;
-  renderTable(type);
+  if (type === 'kitchen') renderKitchenTable(); else renderTable(type);
 }
 
 function onFab() { openEntry(activeTab === 'history' ? 'bar' : activeTab); }
@@ -1081,8 +1325,10 @@ function onFab() { openEntry(activeTab === 'history' ? 'bar' : activeTab); }
 // ════════════════════════════════════════════════════════
 
 function openEntry(type, prefill) {
+  if (type === 'kitchen') return openKitchenEntry(prefill);
   entryType = type;
   photoMap = {};  // reset photo attachments
+  const _sb = document.getElementById('submitBtn'); if (_sb) { _sb.textContent = 'บันทึก ✓'; _sb.onclick = submitEntry; }
   document.getElementById('entryTitle').textContent = type === 'bar' ? '📝 บันทึกบาร์น้ำ' : '📝 บันทึกภาชนะ';
   document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
   // Pre-fill last used name
@@ -1412,6 +1658,215 @@ async function submitEntry() {
 }
 
 // ════════════════════════════════════════════════════════
+// KITCHEN ENTRY  (รับเข้า + คงเหลือ; ใช้ไป auto-calculated)
+// Every entry is a physical count — no separate นับจริง tab, no photos.
+// ════════════════════════════════════════════════════════
+
+function openKitchenEntry(prefill) {
+  entryType = 'kitchen';
+  document.getElementById('entryTitle').textContent = '🍳 บันทึกครัว';
+  document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('entryName').value = localStorage.getItem('mahut_last_name') || '';
+
+  const prefillMap = {};
+  if (prefill) prefill.forEach(e => { prefillMap[e.name] = e; });
+
+  const items = state.kitchen;
+  let html = `<div style="display:grid;grid-template-columns:24px 1fr 92px 100px 74px;gap:6px;padding:6px 0 4px;border-bottom:2px solid var(--border);margin-bottom:4px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted)">#</div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted)">สินค้า</div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:center">รับเข้า (+)</div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:center">คงเหลือ</div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:center">ใช้ไป</div>
+  </div>`;
+
+  if (!items.length) {
+    html += `<div style="padding:28px;text-align:center;color:var(--muted);font-size:13px">ยังไม่มีสินค้าในครัว<br><small>กด ＋ เพิ่มสินค้า เพื่อเริ่ม</small></div>`;
+  }
+
+  // Group items by category (appearance order) with a header before each group
+  const kOrder = [];
+  items.forEach(i => { const c = i.cat || 'อื่นๆ'; if (!kOrder.includes(c)) kOrder.push(c); });
+  const kRow = (item, idx) => {
+    const st = status(item);
+    const sc = st==='critical'?'var(--red)':st==='low'?'var(--yellow)':'var(--green)';
+    const rowBg = st==='critical'?'background:#fff8f8':st==='low'?'background:#fffef5':'';
+    const k = esc(item.name);
+    const pf = prefillMap[item.name];
+    const recvVal  = (pf && pf.recv > 0) ? pf.recv : '';
+    const countVal = (pf && pf.remaining !== undefined) ? pf.remaining : '';
+    return `<div style="border-bottom:1px solid #f0ece6">
+      <div style="display:grid;grid-template-columns:24px 1fr 92px 100px 74px;gap:6px;align-items:center;padding:7px 3px;${rowBg}border-radius:6px">
+        <div style="font-size:11px;color:var(--muted);font-weight:600;text-align:center">${idx+1}</div>
+        <div>
+          <div class="entry-iname">${item.name}</div>
+          <div class="entry-cur">เหลือ <b style="color:${sc}">${item.stock} ${item.unit}</b></div>
+        </div>
+        <div>
+          <input type="number" id="kr_${k}" value="${recvVal}" placeholder="0" min="0" step="any" inputmode="decimal"
+            style="width:100%;text-align:center;padding:8px 2px;border:1px solid var(--border);border-radius:8px;font-size:15px"
+            oninput="kUsed('${k}',${item.stock})" />
+        </div>
+        <div>
+          <input type="number" id="kc_${k}" value="${countVal}" placeholder="${item.stock}" min="0" step="any" inputmode="decimal"
+            style="width:100%;text-align:center;padding:8px 2px;border:1px solid var(--blue);border-radius:8px;font-size:15px;font-weight:600"
+            oninput="kUsed('${k}',${item.stock})" />
+        </div>
+        <div class="k-used" id="ku_${k}" style="text-align:center;font-size:14px;font-weight:700;color:var(--muted)">—</div>
+      </div>
+    </div>`;
+  };
+  let kIdx = 0;
+  kOrder.forEach(cat => {
+    const list = items.filter(i => (i.cat || 'อื่นๆ') === cat);
+    if (!list.length) return;
+    html += `<div style="background:#f3efe9;font-weight:800;font-size:12px;color:#6b5e4e;padding:7px 9px;margin:8px 0 2px;border-radius:6px">🍳 ${cat} <span style="opacity:.6">(${list.length})</span></div>`;
+    list.forEach(item => { html += kRow(item, kIdx); kIdx++; });
+  });
+
+  document.getElementById('entryForm').innerHTML = html;
+  const btn = document.getElementById('submitBtn');
+  if (btn) { btn.textContent = 'บันทึก ✓'; btn.onclick = submitKitchenEntry; }
+  if (prefill) items.forEach(item => kUsed(esc(item.name), item.stock));
+  openModal('entryModal');
+}
+
+// Live-calculate ใช้ไป = ยกมา + รับเข้า − คงเหลือ
+function kUsed(k, prev) {
+  const rEl = document.getElementById('kr_' + k);
+  const cEl = document.getElementById('kc_' + k);
+  const uEl = document.getElementById('ku_' + k);
+  if (!uEl) return;
+  const recv = parseFloat(rEl && rEl.value) || 0;
+  if (!cEl || cEl.value === '') {
+    uEl.textContent = recv > 0 ? '0' : '—';
+    uEl.style.color = 'var(--muted)';
+    return;
+  }
+  const remaining = parseFloat(cEl.value);
+  if (isNaN(remaining)) { uEl.textContent = '—'; uEl.style.color = 'var(--muted)'; return; }
+  const used = prev + recv - remaining;
+  if (used > 0)      { uEl.textContent = '−' + (Math.round(used*100)/100); uEl.style.color = 'var(--red)'; }
+  else if (used < 0) { uEl.textContent = '+' + (Math.round(-used*100)/100); uEl.style.color = 'var(--green)'; }
+  else               { uEl.textContent = '0'; uEl.style.color = 'var(--muted)'; }
+}
+
+// Collect kitchen rows from the form → [{name, recv, used, remaining}]
+function collectKitchenEntries() {
+  const items = state.kitchen;
+  const entries = [];
+  items.forEach(item => {
+    const k = esc(item.name);
+    const recv = parseFloat(document.getElementById('kr_'+k) && document.getElementById('kr_'+k).value) || 0;
+    const cEl = document.getElementById('kc_'+k);
+    const cStr = cEl ? cEl.value : '';
+    const hasCount = cStr !== undefined && cStr !== '';
+    if (!hasCount && recv === 0) return;              // nothing entered → skip
+    const prev = item.stock;
+    const remaining = hasCount ? parseFloat(cStr) : (prev + recv);
+    if (isNaN(remaining)) return;
+    const used = Math.max(0, prev + recv - remaining);
+    entries.push({ name: item.name, recv, used, remaining });
+  });
+  return entries;
+}
+
+async function submitKitchenEntry() {
+  const date = document.getElementById('entryDate').value;
+  const name = document.getElementById('entryName').value.trim();
+  if (!date) { toast('⚠️ เลือกวันที่ก่อน'); return; }
+  if (!name) {
+    document.getElementById('entryName').focus();
+    document.getElementById('entryName').style.borderColor = 'var(--red)';
+    toast('⚠️ กรุณาใส่ชื่อผู้บันทึก');
+    return;
+  }
+  document.getElementById('entryName').style.borderColor = '';
+  localStorage.setItem('mahut_last_name', name);
+
+  const entries = collectKitchenEntries();
+  if (!entries.length) { toast('ไม่มีรายการที่เปลี่ยนแปลง'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '💾 กำลังบันทึก...';
+
+  // Optimistic — คงเหลือ (remaining) is authoritative
+  entries.forEach(e => {
+    const item = state.kitchen.find(i => i.name === e.name);
+    if (item) item.stock = e.remaining;
+  });
+
+  state.history.push({ date, type: 'kitchen', by: name, entries, ts: Date.now() });
+  save();
+  closeModal('entryModal');
+  render();
+
+  if (state.apiUrl && !state.demoMode && kitchenBackendOK) {
+    try {
+      const res = await fetch(state.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'kitchenEntry', type: 'kitchen', date, by: name,
+          entries: entries.map(e => ({ name: e.name, recv: e.recv, remaining: e.remaining })) })
+      });
+      const data = await res.json();
+      toast(data.success ? `✅ บันทึกครัว ${entries.length} รายการ → Sheets` : `⚠️ บันทึกในเครื่องแล้ว: ${data.error}`);
+    } catch {
+      toast('📱 บันทึกในเครื่องแล้ว (Sheets offline)');
+    } finally {
+      btn.disabled = false; btn.textContent = 'บันทึก ✓';
+    }
+  } else {
+    toast(kitchenBackendOK ? `✅ บันทึกครัว ${entries.length} รายการ` : '📱 บันทึกในเครื่องแล้ว — ยังไม่ได้ตั้งค่า Sheet ครัว');
+    btn.disabled = false; btn.textContent = 'บันทึก ✓';
+  }
+}
+
+async function submitEditKitchenEntry() {
+  const entry = state.history[editHistoryIdx];
+  if (!entry) return;
+  const date       = document.getElementById('entryDate').value;
+  const origBy     = document.getElementById('entryName').value.trim();
+  const editorName = document.getElementById('editorName') && document.getElementById('editorName').value.trim() || '';
+  if (!date)       { toast('⚠️ เลือกวันที่ก่อน'); return; }
+  if (!editorName) { const en = document.getElementById('editorName'); if (en) en.focus(); toast('⚠️ กรุณาใส่ชื่อผู้แก้ไข'); return; }
+  localStorage.setItem('mahut_last_name', editorName);
+
+  const entries = collectKitchenEntries();
+  const editedAt = new Date().toISOString();
+  entry.entries  = entries;
+  entry.by       = origBy;
+  entry.editedBy = editorName;
+  entry.editedAt = editedAt;
+  save();
+  closeModal('entryModal');
+  render();
+  toast('💾 กำลังอัปเดต Sheets...');
+
+  if (state.apiUrl && !state.demoMode && kitchenBackendOK) {
+    try {
+      if (entry.ts) {
+        await fetch(state.apiUrl, {
+          method: 'POST', headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'deleteLogEntry', type: 'kitchen', ts: String(entry.ts) })
+        });
+      }
+      await fetch(state.apiUrl, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'kitchenEntry', type: 'kitchen', date,
+          by: `${origBy} (แก้ไขโดย ${editorName})`,
+          entries: entries.map(e => ({ name: e.name, recv: e.recv, remaining: e.remaining })) })
+      });
+      await syncData();   // reconcile local stock with server truth (handles removed items)
+      toast(`✅ แก้ไขครัวและบันทึก Sheets แล้ว (แก้ไขโดย ${editorName})`);
+    } catch { toast('📱 แก้ไขในเครื่องแล้ว (Sheets offline)'); }
+  } else {
+    toast(`✅ แก้ไขแล้ว (แก้ไขโดย ${editorName})`);
+  }
+  editHistoryIdx = -1;
+}
+
+// ════════════════════════════════════════════════════════
 // QUICK EDIT
 // ════════════════════════════════════════════════════════
 
@@ -1426,7 +1881,7 @@ async function quickEdit(type, name) {
   save();
   render();
   toast(`💾 กำลังอัปเดต ${item.name}...`);
-  if (state.apiUrl && !state.demoMode) {
+  if (state.apiUrl && !state.demoMode && !(type === 'kitchen' && !kitchenBackendOK)) {
     try {
       const res  = await fetch(state.apiUrl, {
         method: 'POST',
@@ -1722,7 +2177,7 @@ function renderDaily() {
   document.getElementById('dailyCardDate').textContent = dateLabel;
 
   // Aggregate all history entries for this date
-  const dayEntries = (state.history || []).filter(e => e.date === dateVal && e.kind !== 'physicalCount');
+  const dayEntries = (state.history || []).filter(e => e.date === dateVal && e.kind !== 'physicalCount' && e.type !== 'kitchen');
 
   // Build aggregated maps per type
   const aggBar = {}; const aggCont = {};
@@ -1790,6 +2245,7 @@ function renderDaily() {
   document.getElementById('dailyCardBody').innerHTML = html;
   document.getElementById('dailyCardFooter').innerHTML =
     `${byText}${byText ? ' &nbsp;·&nbsp; ' : ''}สร้างเมื่อ ${new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} · Mahutsachan`;
+  renderKitchenDaily(dateVal);
 }
 
 // Compute end-of-day stock for a given date by walking history backwards
@@ -1802,6 +2258,7 @@ function computeStockForDate(dateVal) {
   const hist = [...(state.history || [])].reverse();
   for (const entry of hist) {
     if (entry.date <= dateVal) break; // reached target date — stop
+    if (entry.type !== 'bar' && entry.type !== 'container') continue; // kitchen tracked separately
     const stock = entry.type === 'bar' ? barStock : contStock;
     if (entry.kind === 'physicalCount') {
       // Restore pre-count system stock
@@ -1859,6 +2316,119 @@ function buildDailySection(icon, title, agg, allItems, stockOverride) {
 
   html += `</tbody></table></div>`;
   return html;
+}
+
+function round2(x) { return Math.round((parseFloat(x) || 0) * 100) / 100; }
+
+// ── Separate kitchen daily card ──────────────────────────
+function renderKitchenDaily(dateVal) {
+  const block = document.getElementById('kitchenDailyBlock');
+  if (!block) return;
+  const dayK = (state.history || []).filter(e => e.date === dateVal && e.type === 'kitchen' && e.kind !== 'physicalCount');
+  if (!dayK.length) { block.style.display = 'none'; return; }
+  block.style.display = '';
+
+  const d = new Date(dateVal + 'T00:00:00');
+  const thaiDays = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+  const thaiMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  document.getElementById('dailyCardKitchenDate').textContent =
+    `วัน${thaiDays[d.getDay()]}ที่ ${d.getDate()} ${thaiMonths[d.getMonth()]} ${d.getFullYear() + 543}`;
+  const logo = document.getElementById('dailyKitchenLogo');
+  const pin  = document.querySelector('.pin-logo');
+  if (logo) logo.src = (pin && pin.src) || '';
+
+  // Aggregate this day's kitchen activity per item
+  const agg = {};
+  dayK.forEach(entry => {
+    (entry.entries || []).forEach(e => {
+      if (!agg[e.name]) agg[e.name] = { recv: 0, used: 0, remaining: undefined };
+      agg[e.name].recv += (e.recv || 0);
+      agg[e.name].used += (e.used || 0);
+      if (e.remaining !== undefined) agg[e.name].remaining = e.remaining; // last count wins
+    });
+  });
+
+  const itemCat = {}, itemUnit = {}, itemIdx = {};
+  state.kitchen.forEach((i, idx) => { itemCat[i.name] = i.cat || 'อื่นๆ'; itemUnit[i.name] = i.unit || ''; itemIdx[i.name] = idx; });
+
+  const groups = {};
+  Object.keys(agg).forEach(name => { const c = itemCat[name] || 'อื่นๆ'; (groups[c] = groups[c] || []).push(name); });
+
+  const cats = kitchenCategories().filter(c => groups[c]);
+  Object.keys(groups).forEach(c => { if (!cats.includes(c)) cats.push(c); });
+
+  let html = '', tRecv = 0, tUsed = 0, activeCount = 0;
+  cats.forEach(cat => {
+    const names = groups[cat];
+    if (!names || !names.length) return;
+    names.sort((a, b) => (itemIdx[a] ?? 9999) - (itemIdx[b] ?? 9999));
+    html += buildKitchenDailySection(cat, names, agg, itemUnit);
+    names.forEach(n => { tRecv += agg[n].recv; tUsed += agg[n].used; activeCount++; });
+  });
+  document.getElementById('dailyCardKitchenBody').innerHTML = html;
+
+  const recorders = [...new Set(dayK.filter(e => e.by).map(e => e.by))];
+  const byText = recorders.length ? `👤 ${recorders.join(', ')}` : '';
+  document.getElementById('dailyCardKitchenFooter').innerHTML =
+    `${byText}${byText ? ' &nbsp;·&nbsp; ' : ''}เคลื่อนไหว ${activeCount} รายการ · รับ +${round2(tRecv)} · ใช้ −${round2(tUsed)} · Mahutsachan`;
+}
+
+function buildKitchenDailySection(cat, names, agg, itemUnit) {
+  let rows = '';
+  names.forEach((name, i) => {
+    const a = agg[name];
+    const recv = a.recv || 0, used = a.used || 0;
+    const remaining = a.remaining !== undefined ? round2(a.remaining) : '—';
+    const opening   = a.remaining !== undefined ? round2(a.remaining - a.recv + a.used) : '—';
+    rows += `<tr style="border-top:1px solid #f0ece6">
+      <td style="padding:6px 8px;font-size:11px;color:#999;text-align:right">${i + 1}</td>
+      <td style="padding:6px 10px;font-size:13px">${name}<span style="color:#999;font-size:11px;margin-left:4px">${itemUnit[name] || ''}</span></td>
+      <td style="padding:6px 10px;font-size:13px;text-align:right;color:#999">${opening}</td>
+      <td style="padding:6px 10px;font-size:13px;text-align:right;${recv > 0 ? 'color:#3a8c5c;font-weight:700' : 'color:#cfcabf'}">${recv > 0 ? '+' + round2(recv) : '—'}</td>
+      <td style="padding:6px 10px;font-size:13px;text-align:right;${used > 0 ? 'color:#cc3333;font-weight:700' : 'color:#cfcabf'}">${used > 0 ? '−' + round2(used) : '—'}</td>
+      <td style="padding:6px 10px;font-size:13px;text-align:right;font-weight:700">${remaining}</td>
+    </tr>`;
+  });
+  return `<div style="margin-bottom:14px">
+    <div style="background:#f3efe9;font-weight:800;font-size:12px;color:#6b5e4e;padding:7px 10px;border-radius:6px;margin-bottom:2px">🍳 ${cat} <span style="opacity:.6">(${names.length})</span></div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#faf8f5">
+        <th style="padding:6px 8px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">#</th>
+        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:left;text-transform:uppercase">สินค้า</th>
+        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">ยกมา</th>
+        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">รับ</th>
+        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">ใช้</th>
+        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">คงเหลือ</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+async function saveKitchenDailyImage() {
+  const card = document.getElementById('dailyCardKitchen');
+  const btn  = document.getElementById('saveKitchenImgBtn');
+  const dateVal = document.getElementById('dailyDatePicker').value || 'stock';
+  const body = document.getElementById('dailyCardKitchenBody');
+  if (!body || !body.innerHTML.trim()) { toast('⚠️ ไม่มีข้อมูลครัวในวันนี้'); return; }
+  btn.disabled = true; btn.textContent = '⏳ กำลังสร้าง...';
+  try {
+    if (!window.html2canvas) {
+      await new Promise((resolve, reject) => {
+        const sc = document.createElement('script');
+        sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        sc.onload = resolve; sc.onerror = reject;
+        document.head.appendChild(sc);
+      });
+    }
+    const canvas = await html2canvas(card, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+      onclone: (doc) => { const c = doc.getElementById('dailyCardKitchen'); if (c) c.style.borderRadius = '0'; } });
+    await saveCanvasImage(canvas, `kitchen_${dateVal}.jpg`);
+  } catch (err) {
+    toast('❌ เกิดข้อผิดพลาด: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '📥 เซฟรูปครัว';
+  }
 }
 
 async function saveDailyImage() {
@@ -1993,7 +2563,7 @@ async function deleteHistory(idx) {
   render();
   toast('🗑 ลบแล้ว — กำลังอัปเดต Sheets...');
 
-  if (state.apiUrl && !state.demoMode) {
+  if (state.apiUrl && !state.demoMode && !(entry.type === 'kitchen' && !kitchenBackendOK)) {
     const jobs = [];
 
     if (entry.kind === 'physicalCount') {
@@ -2083,7 +2653,8 @@ async function deleteHistory(idx) {
 function exportCSV() {
   const all = [
     ...state.bar.map(i=>({...i,type:'บาร์น้ำ'})),
-    ...state.container.map(i=>({...i,type:'ภาชนะ'}))
+    ...state.container.map(i=>({...i,type:'ภาชนะ'})),
+    ...state.kitchen.map(i=>({...i,type:'ครัว'}))
   ];
   const header = 'ประเภท,สินค้า,หมวด,คงเหลือ,หน่วย,Min\n';
   const rows = all.map(i=>`${i.type},${i.name},${i.cat},${i.stock},${i.unit},${i.min}`).join('\n');
@@ -2433,6 +3004,16 @@ function openEditHistory(idx) {
     btn.onclick = () => submitEditPhysCount();
     openModal('countModal');
 
+  } else if (entry.type === 'kitchen') {
+    entryType = 'kitchen';
+    injectEditorNameField('entryModal');
+    openKitchenEntry(entry.entries);
+    document.getElementById('entryTitle').textContent = '✏️ แก้ไขบันทึกครัว';
+    document.getElementById('entryDate').value = entry.date;
+    document.getElementById('entryName').value = entry.by || '';
+    const btn = document.getElementById('submitBtn');
+    btn.textContent = 'บันทึกการแก้ไข ✓';
+    btn.onclick = () => submitEditKitchenEntry();
   } else {
     entryType = entry.type;
     document.getElementById('entryTitle').textContent =
