@@ -970,6 +970,7 @@ async function syncData() {
     state.history  = [...barHist, ...contHist, ...kitHist]
       .filter(e => !deleted.has(String(e.ts)))
       .sort((a, b) => String(a.ts) < String(b.ts) ? -1 : 1);
+    attachKitchenRemaining();
 
     // Self-heal: tombstoned entries still in Sheets → delete them server-side so
     // they can't corrupt computeStockForDate on other devices (no localStorage tombstone)
@@ -2319,6 +2320,22 @@ function buildDailySection(icon, title, agg, allItems, stockOverride) {
 }
 
 function round2(x) { return Math.round((parseFloat(x) || 0) * 100) / 100; }
+
+// Server kitchen history returns recv/used but not the stored คงเหลือ (remaining).
+// Reconstruct each entry's remaining per item by walking newest→oldest from the
+// current stock (kitchen has only 'entry' rows, so this chain is exact in the normal case).
+function attachKitchenRemaining() {
+  const running = {};
+  state.kitchen.forEach(i => { running[i.name] = i.stock; });
+  const kEntries = (state.history || []).filter(e => e.type === 'kitchen' && e.kind !== 'physicalCount');
+  for (let i = kEntries.length - 1; i >= 0; i--) {          // state.history is oldest-first → walk newest first
+    (kEntries[i].entries || []).forEach(e => {
+      if (running[e.name] === undefined) return;
+      if (e.remaining === undefined) e.remaining = running[e.name];
+      running[e.name] = running[e.name] - (e.recv || 0) + (e.used || 0);   // stock before this entry
+    });
+  }
+}
 
 // ── Separate kitchen daily card ──────────────────────────
 function renderKitchenDaily(dateVal) {
