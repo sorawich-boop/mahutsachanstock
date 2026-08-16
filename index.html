@@ -258,6 +258,11 @@ tr.row-yellow { background: #fffef5; }
 .ds-bal.crit { color: var(--red); }
 .ds-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
 .ds-unit { white-space: nowrap; }
+.kentry-grid { display: grid; grid-template-columns: 24px 1fr 92px 100px 74px; gap: 6px; align-items: center; }
+@media (max-width: 480px) {
+  .kentry-grid { grid-template-columns: 18px 1fr 58px 64px 50px; gap: 4px; }
+  .kentry-grid input { font-size: 14px; padding: 8px 1px; }
+}
 
 /* ── Daily card: fit all 6 columns on phone screens ── */
 @media (max-width: 480px) {
@@ -1673,7 +1678,7 @@ function openKitchenEntry(prefill) {
   if (prefill) prefill.forEach(e => { prefillMap[e.name] = e; });
 
   const items = state.kitchen;
-  let html = `<div style="display:grid;grid-template-columns:24px 1fr 92px 100px 74px;gap:6px;padding:6px 0 4px;border-bottom:2px solid var(--border);margin-bottom:4px">
+  let html = `<div class="kentry-grid" style="padding:6px 0 4px;border-bottom:2px solid var(--border);margin-bottom:4px">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted)">#</div>
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted)">สินค้า</div>
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);text-align:center">รับเข้า (+)</div>
@@ -1697,7 +1702,7 @@ function openKitchenEntry(prefill) {
     const recvVal  = (pf && pf.recv > 0) ? pf.recv : '';
     const countVal = (pf && pf.remaining !== undefined) ? pf.remaining : '';
     return `<div style="border-bottom:1px solid #f0ece6">
-      <div style="display:grid;grid-template-columns:24px 1fr 92px 100px 74px;gap:6px;align-items:center;padding:7px 3px;${rowBg}border-radius:6px">
+      <div class="kentry-grid" style="padding:7px 3px;${rowBg}border-radius:6px">
         <div style="font-size:11px;color:var(--muted);font-weight:600;text-align:center">${idx+1}</div>
         <div>
           <div class="entry-iname">${item.name}</div>
@@ -2397,26 +2402,23 @@ function buildKitchenDailySection(cat, names, agg, itemUnit) {
     const recv = a.recv || 0, used = a.used || 0;
     const remaining = a.remaining !== undefined ? round2(a.remaining) : '—';
     const opening   = a.remaining !== undefined ? round2(a.remaining - a.recv + a.used) : '—';
-    rows += `<tr style="border-top:1px solid #f0ece6">
-      <td style="padding:6px 8px;font-size:11px;color:#999;text-align:right">${i + 1}</td>
-      <td style="padding:6px 10px;font-size:13px">${name}<span style="color:#999;font-size:11px;margin-left:4px">${itemUnit[name] || ''}</span></td>
-      <td style="padding:6px 10px;font-size:13px;text-align:right;color:#999">${opening}</td>
-      <td style="padding:6px 10px;font-size:13px;text-align:right;${recv > 0 ? 'color:#3a8c5c;font-weight:700' : 'color:#cfcabf'}">${recv > 0 ? '+' + round2(recv) : '—'}</td>
-      <td style="padding:6px 10px;font-size:13px;text-align:right;${used > 0 ? 'color:#cc3333;font-weight:700' : 'color:#cfcabf'}">${used > 0 ? '−' + round2(used) : '—'}</td>
-      <td style="padding:6px 10px;font-size:13px;text-align:right;font-weight:700">${remaining}</td>
+    rows += `<tr>
+      <td>${i + 1}</td>
+      <td>${name}<span class="ds-unit" style="color:var(--muted);font-size:11px;margin-left:4px">${itemUnit[name] || ''}</span></td>
+      <td style="color:var(--muted)">${opening}</td>
+      <td class="${recv > 0 ? 'ds-recv' : ''}">${recv > 0 ? '+' + round2(recv) : '—'}</td>
+      <td class="${used > 0 ? 'ds-used' : ''}">${used > 0 ? '−' + round2(used) : '—'}</td>
+      <td class="ds-bal">${remaining}</td>
     </tr>`;
   });
-  return `<div style="margin-bottom:14px">
-    <div style="background:#f3efe9;font-weight:800;font-size:12px;color:#6b5e4e;padding:7px 10px;border-radius:6px;margin-bottom:2px">🍳 ${cat} <span style="opacity:.6">(${names.length})</span></div>
-    <table style="width:100%;border-collapse:collapse">
-      <thead><tr style="background:#faf8f5">
-        <th style="padding:6px 8px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">#</th>
-        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:left;text-transform:uppercase">สินค้า</th>
-        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">ยกมา</th>
-        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">รับ</th>
-        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">ใช้</th>
-        <th style="padding:6px 10px;font-size:10px;font-weight:700;color:#999;text-align:right;text-transform:uppercase">คงเหลือ</th>
-      </tr></thead>
+  return `<div class="ds-section">
+    <div class="ds-section-head">
+      <span class="ds-icon">🍳</span>
+      <span class="ds-title">${cat}</span>
+      <span class="ds-count">${names.length} รายการ</span>
+    </div>
+    <table class="ds-table ds-table-daily">
+      <thead><tr><th>#</th><th>สินค้า</th><th>ยกมา</th><th>รับ</th><th>ใช้</th><th>คงเหลือ</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
